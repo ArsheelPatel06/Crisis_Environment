@@ -140,16 +140,17 @@ def _build_grpo_config(
     from inspect import signature
 
     allowed = set(signature(grpo_config_cls).parameters)
-    # Prefer small generations when batch=1 (global batch must divide num_generations in many TRL versions).
+    # TRL 1.2+ GRPO requires num_generations >= 2. Global batch must be divisible by num_generations
+    # (1 GPU × batch 2 ÷ 2 generations = OK on T4 for 0.5B).
     candidates: dict[str, Any] = {
         "output_dir": str(run_dir),
         "num_train_epochs": float(epochs),
-        "per_device_train_batch_size": 1,
+        "per_device_train_batch_size": 2,
         "gradient_accumulation_steps": 1,
         "logging_steps": 1,
         "max_completion_length": 384,
         "max_prompt_length": 1024,
-        "num_generations": 1,
+        "num_generations": 2,
     }
     if use_cpu:
         # TRL 1.x + transformers: CPU training must opt in; bf16 defaults can error without GPU.
