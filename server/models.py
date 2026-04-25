@@ -12,6 +12,10 @@ def _clip_01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def _default_stakeholder_trust_scores() -> Dict[str, float]:
+    return {"Finance": 0.7, "Engineering": 0.7, "PR": 0.7}
+
+
 class Observation(BaseModel):
     task_id: TaskId
     step: int
@@ -29,6 +33,9 @@ class Observation(BaseModel):
     alerts: List[Dict[str, Any]] = Field(default_factory=list)
     pending_debate: Optional[Dict[str, Any]] = None
     task_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    stakeholder_messages: List[str] = Field(default_factory=list)
+    stakeholder_trust_scores: Dict[str, float] = Field(default_factory=_default_stakeholder_trust_scores)
 
     @field_validator("system_health", "threat_level", "infection_ratio", mode="before")
     @classmethod
