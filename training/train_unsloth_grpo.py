@@ -134,6 +134,7 @@ def _build_grpo_config(
     *,
     run_dir: Path,
     epochs: int,
+    use_cpu: bool,
 ) -> Any:
     """TRL versions differ (e.g. ``max_prompt_length`` removed in newer GRPOConfig). Only pass supported kwargs."""
     from inspect import signature
@@ -150,6 +151,11 @@ def _build_grpo_config(
         "max_prompt_length": 1024,
         "num_generations": 1,
     }
+    if use_cpu:
+        # TRL 1.x + transformers: CPU training must opt in; bf16 defaults can error without GPU.
+        candidates["use_cpu"] = True
+        candidates["bf16"] = False
+        candidates["fp16"] = False
     kwargs = {k: v for k, v in candidates.items() if k in allowed}
     return grpo_config_cls(**kwargs)  # type: ignore[no-untyped-call, misc, call-arg, dict-item, truthy, truthy-bool]
 
@@ -182,18 +188,27 @@ def run_grpo_train(
 
     ds: Any = Dataset.from_dict({"prompt": prompt_texts, "seed": seed_list})
 
-    bnb4 = torch.float16
-    if torch.cuda.is_available():
+    use_cuda = bool(torch.cuda.is_available())
+    if not use_cuda:
+        print(
+            "WARNING: No CUDA GPU — training runs on CPU (very slow). "
+            "Colab: Runtime → Change runtime type → T4 GPU, then Runtime → Restart runtime.",
+            file=sys.stderr,
+        )
+
+    bnb: Any = None
+    if use_cuda:
+        bnb4 = torch.float16
         try:
             bnb4 = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
         except Exception:  # noqa: BLE001
             bnb4 = torch.float16
-    bnb = BitsAndBytesConfig(  # type: ignore[call-arg, misc, truthy, truthy-bool]
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=bnb4,
-    )
+        bnb = BitsAndBytesConfig(  # type: ignore[call-arg, misc, truthy, truthy-bool]
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=bnb4,
+        )
 
     model: Any
     tok: Any
@@ -223,12 +238,21 @@ def run_grpo_train(
         tok = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)  # type: ignore[no-untyped-call]
         if tok.pad_token is None and tok.eos_token is not None:
             tok.pad_token = tok.eos_token
-        model = AutoModelForCausalLM.from_pretrained(  # type: ignore[no-untyped-call, misc, operator, dict-item, truthy, truthy-bool]
-            model_name,
-            quantization_config=bnb,
-            device_map="auto",
-            trust_remote_code=True,
-        )
+        if use_cuda:
+            model = AutoModelForCausalLM.from_pretrained(  # type: ignore[no-untyped-call, misc, operator, dict-item, truthy, truthy-bool]
+                model_name,
+                quantization_config=bnb,
+                device_map="auto",
+                trust_remote_code=True,
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(  # type: ignore[no-untyped-call, misc, operator, dict-item, truthy, truthy-bool]
+                model_name,
+                torch_dtype=torch.float32,
+                device_map="cpu",
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+            )
         lora = LoraConfig(  # type: ignore[call-arg, misc, truthy, truthy-bool]
             r=8, lora_alpha=32, lora_dropout=0.0, bias="none", task_type="CAUSAL_LM",
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj", "gate_proj"],
@@ -237,7 +261,9 @@ def run_grpo_train(
 
     run_dir = output_dir / "grpo"
     run_dir.mkdir(parents=True, exist_ok=True)
-    cfg: Any = _build_grpo_config(GRPOConfig, run_dir=run_dir, epochs=epochs)  # type: ignore[assignment, misc, truthy, truthy-bool]
+    cfg: Any = _build_grpo_config(
+        GRPOConfig, run_dir=run_dir, epochs=epochs, use_cpu=not use_cuda
+    )  # type: ignore[assignment, misc, truthy, truthy-bool]
     pnames = set(signature(GRPOTrainer).parameters)  # type: ignore[no-untyped-call, type-arg, misc, truthy, arg-type, truthy-bool]
     kw: dict[str, Any] = {
         "model": model,
