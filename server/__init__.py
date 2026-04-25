@@ -1,2 +1,1 @@
-"""Server package."""
-
+"""Server package for OpenEnv-compatible API."""
