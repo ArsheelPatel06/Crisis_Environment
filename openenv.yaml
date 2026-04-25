@@ -1,0 +1,3 @@
+name: cyber-crisis-env
+entrypoint: server.main:app
+description: Cyber Crisis Simulation
