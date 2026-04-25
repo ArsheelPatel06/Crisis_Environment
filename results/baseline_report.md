@@ -1,12 +1,15 @@
 # Baseline Report
 
-- Mode: `mock`
+- Mode: `live`
 - Seed: `42`
+- Base URL: `http://127.0.0.1:7860`
+- Episodes per task: `3`
+- Max steps: `60`
 
 ## Scores
-- `alert_triage`: 0.7000
-- `stakeholder_argument`: 0.8667
-- `full_crisis_episode`: 0.4146
+- `alert_triage`: 0.8102
+- `stakeholder_argument`: 0.2996
+- `full_crisis_episode`: 0.7097
 
 ## Notes
 - Scores are deterministic for the same seed and config.

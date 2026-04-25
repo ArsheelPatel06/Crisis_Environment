@@ -112,6 +112,52 @@ def _live_step(base_url: str, action: Dict[str, Any]) -> Tuple[Dict[str, Any], f
     return observation, reward_total, done, info
 
 
+def _normalize_alerts(observation: Dict[str, Any]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    raw_alerts = observation.get("alerts", [])
+    if not isinstance(raw_alerts, list):
+        return normalized
+
+    for idx, alert in enumerate(raw_alerts):
+        if isinstance(alert, dict):
+            alert_id = str(alert.get("id", f"alert_{idx}"))
+            normalized.append(
+                {
+                    "id": alert_id,
+                    "node": str(alert.get("node", "auth_server")),
+                    "severity": int(alert.get("severity", 3)),
+                    "kind": str(alert.get("kind", "")),
+                    "signature": str(alert.get("signature", "")),
+                }
+            )
+            continue
+
+        if isinstance(alert, str):
+            sev = 3
+            upper = alert.upper()
+            if "CRITICAL" in upper:
+                sev = 5
+            elif "WARNING" in upper:
+                sev = 4
+            elif "NORMAL" in upper:
+                sev = 2
+            normalized.append(
+                {
+                    "id": f"alert_{idx}",
+                    "node": "auth_server",
+                    "severity": sev,
+                    "kind": upper.lower(),
+                    "signature": upper.lower(),
+                }
+            )
+    return normalized
+
+
+def _format_action(action_type: str, target: str = "auth_server") -> Dict[str, Any]:
+    # Current env-core expects this action schema.
+    return {"action_type": action_type, "target": target}
+
+
 def _score_from_rollout(
     reward_history: List[float], final_observation: Dict[str, Any], final_info: Dict[str, Any]
 ) -> float:
@@ -130,7 +176,7 @@ def _score_from_rollout(
 
 def _choose_task1_action(observation: Dict[str, Any], rng: random.Random) -> Dict[str, Any]:
     classifications: Dict[str, str] = {}
-    for alert in observation.get("alerts", []):
+    for alert in _normalize_alerts(observation):
         alert_id = alert.get("id")
         if not alert_id:
             continue
@@ -144,70 +190,40 @@ def _choose_task1_action(observation: Dict[str, Any], rng: random.Random) -> Dic
         ) or (rng.random() < 0.15)
         classifications[alert_id] = "fake" if likely_fake else "real"
 
-    return {
-        "kind": "classify_alerts",
-        "classifications": classifications,
-    }
+    # Current server action model does not support classify_alerts yet.
+    # Use monitor/ignore proxy actions based on fake ratio.
+    fake_ratio = (sum(1 for v in classifications.values() if v == "fake") / max(1, len(classifications)))
+    if fake_ratio > 0.5:
+        return _format_action("monitor")
+    return _format_action("patch")
 
 
 def _choose_task2_action(observation: Dict[str, Any], requested: bool) -> Dict[str, Any]:
-    pending = observation.get("pending_decision")
-    if pending:
-        decision_id = pending.get("decision_id")
-        target_node = pending.get("target_node", "auth_server")
-        objections = pending.get("objections", [])
-        alerts = observation.get("alerts", [])
-        citations = [a.get("id") for a in alerts if a.get("node") == target_node and a.get("id")]
-        citations = citations[:3]
-        objection_text = " ".join(str(x) for x in objections)
-        argument = (
-            f"We should isolate {target_node} now to contain likely compromise while limiting downtime. "
-            f"Evidence from cited alerts supports action, and this addresses objections: {objection_text}."
-        )
-        return {
-            "kind": "argue",
-            "decision_id": decision_id,
-            "target_node": target_node,
-            "text": argument,
-            "citations": citations,
-        }
-
-    if not requested:
-        return {"kind": "request_approval", "target_node": "auth_server"}
-
-    return {"kind": "noop"}
+    threat = float(observation.get("threat_level", 0.0))
+    status = str(observation.get("status", "stable")).lower()
+    if threat >= 0.55 or status == "critical":
+        return _format_action("isolate")
+    if requested:
+        return _format_action("communicate")
+    return _format_action("monitor")
 
 
 def _choose_task3_action(observation: Dict[str, Any], rng: random.Random) -> Dict[str, Any]:
-    pending = observation.get("pending_decision")
-    if pending:
-        decision_id = pending.get("decision_id")
-        target_node = pending.get("target_node", "auth_server")
-        alerts = observation.get("alerts", [])
-        citations = [a.get("id") for a in alerts if a.get("id")][:2]
-        return {
-            "kind": "argue",
-            "decision_id": decision_id,
-            "target_node": target_node,
-            "text": f"Containment on {target_node} is justified by current incident indicators.",
-            "citations": citations,
-        }
-
-    alerts = observation.get("alerts", [])
+    alerts = _normalize_alerts(observation)
     if alerts:
         # Prioritize highest-severity node.
         highest = max(alerts, key=lambda a: int(a.get("severity", 1)))
         node = highest.get("node")
         if node:
             if int(highest.get("severity", 1)) >= 4 and rng.random() < 0.7:
-                return {"kind": "request_approval", "target_node": node}
+                return _format_action("isolate", target=node)
             if rng.random() < 0.5:
-                return {"kind": "monitor", "target_node": node}
-            return {"kind": "allocate_engineer", "target_node": node}
+                return _format_action("monitor", target=node)
+            return _format_action("patch", target=node)
 
     # Small deterministic exploration baseline.
     fallback_nodes = ["api_gateway", "internal_tools", "auth_server", "comms"]
-    return {"kind": "monitor", "target_node": rng.choice(fallback_nodes)}
+    return _format_action("monitor", target=rng.choice(fallback_nodes))
 
 
 def _run_task_live(base_url: str, task_id: str, seed: int, max_steps: int) -> float:
