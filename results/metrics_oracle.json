@@ -1,0 +1,10 @@
+{
+  "oracle_task1_triage_ceiling": {
+    "seed_42": 1.0,
+    "seed_84": 1.0,
+    "seed_126": 1.0,
+    "seed_7": 1.0,
+    "seed_2025": 1.0
+  },
+  "note": "Uses ground truth from env.get_state; for analysis only, not a fair deploy baseline."
+}

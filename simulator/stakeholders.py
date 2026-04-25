@@ -94,6 +94,10 @@ class StakeholderSystem:
         )
         argument_score = max(0.0, min(1.0, argument_score))
 
+        # Evidence is mandatory for approval-grade scores.
+        if evidence_accuracy < 1.0:
+            argument_score = min(argument_score, 0.59)
+
         fake_citations = [cid for cid in valid_ids if self.world.truth_alert_is_fake.get(cid, True)]
         trust_penalty = 0.0
         if fake_citations:

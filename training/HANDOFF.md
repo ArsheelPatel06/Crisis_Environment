@@ -61,9 +61,12 @@ Outputs:
 - `results/task2_curve.png`
 - `results/before_after_episode.md`
 
-## Remaining to reach final submission quality
+## Training pipeline (solo, current)
 
-- Replace checkpoint artifact generation with real TRL/Unsloth training outputs.
-- Save final real curves to `results/task1_curve.png` and `results/task2_curve.png`.
-- Update `results/before_after_episode.md` with real trained-vs-baseline numbers.
+- Response contract: `training/prompts.py` (JSON `Action` schema, parse with repair in code).
+- SFT JSONL: `python -m training.rollout_sft --out data/sft_rollout.jsonl`
+- In-process metrics (no GPU): `python -m training.train_unsloth_grpo --eval-all` → `results/metrics_*.json`
+- GRPO Task1: `python -m training.train_unsloth_grpo --train` (see `requirements-train.txt` / `pip install -e .[train]`)
+- Curves: `python -m training.generate_results` (reads `metrics_baseline.json`; `training_log.csv` may be from GRPO)
+- HTTP parity: `python -m training.eval_http --base-url http://127.0.0.1:7860` → `results/deploy_parity.json`
 

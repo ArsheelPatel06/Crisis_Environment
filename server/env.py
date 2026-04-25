@@ -1,320 +1,375 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
-from server.models import Action, Observation, Reward
+from server.models import Action, Observation, Reward, TaskId
 from server.seeds import normalize_seed, set_seed
+from server.tasks import (
+    TASK_REGISTRY,
+    get_task_spec,
+    grade_task1_alert_triage,
+    grade_task2_stakeholder_argument,
+)
+from simulator.stakeholders import StakeholderSystem
+from simulator.world import KILL_CHAIN, CompanyWorld
 
-MAX_STEPS = 50
+
+def _severity_to_int(severity: str) -> int:
+    s = str(severity).lower()
+    mapping = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+    return int(mapping.get(s, 2))
+
+
+def _alerts_for_api(alerts: List[dict]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for a in alerts:
+        out.append(
+            {
+                "id": str(a["id"]),
+                "node": str(a["node"]),
+                "severity": _severity_to_int(str(a.get("severity", "medium"))),
+                "kind": str(a.get("message", "alert")).lower(),
+                "signature": str(a.get("message", "alert")).lower(),
+            }
+        )
+    return out
+
+
+def _alert_node_map(world: CompanyWorld) -> Dict[str, str]:
+    return {aid: str(meta["node"]) for aid, meta in world.alerts_by_id.items()}
 
 
 @dataclass
 class CyberCrisisEnv:
     seed: int
+    task_id: TaskId = "full_crisis_episode"
+
     rng: Any = field(init=False)
+    world: CompanyWorld = field(init=False)
+    stakeholders: StakeholderSystem = field(init=False)
+
     step_count: int = field(default=0, init=False)
     done: bool = field(default=False, init=False)
-    system_health: float = field(default=1.0, init=False)
-    threat_level: float = field(default=0.2, init=False)
-    infected_nodes: int = field(default=1, init=False)
-    total_nodes: int = field(default=10, init=False)
-    time_pressure: int = field(default=0, init=False)
-    last_action: str = field(default="none", init=False)
-    monitor_reduction_next_step: bool = field(default=False, init=False)
-    attacker_type: str = field(default="stealth", init=False)
-    action_history: list[str] = field(default_factory=list, init=False)
-    infection_ratio_history: list[float] = field(default_factory=list, init=False)
-    reward_history: list[float] = field(default_factory=list, init=False)
-    pending_effects: list[dict[str, Any]] = field(default_factory=list, init=False)
-    isolation_active: bool = field(default=False, init=False)
-    prev_infected_nodes: int = field(default=1, init=False)
-    prev_system_health: float = field(default=1.0, init=False)
-    low_infection_streak: int = field(default=0, init=False)
-    steps_since_patch: int = field(default=0, init=False)
+
+    last_alerts: List[dict] = field(default_factory=list, init=False)
+    episode_reward_totals: List[float] = field(default_factory=list, init=False)
+
+    noop_streak: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         self.seed = normalize_seed(self.seed)
         self.rng = set_seed(self.seed)
-
-    def reset(self, seed: int | None = None) -> Observation:
-        if seed is not None:
-            self.seed = normalize_seed(seed)
-        # Reset RNG first so all downstream state updates are deterministic.
-        self.rng = set_seed(self.seed)
+        self.world = CompanyWorld(seed=self.seed)
+        self.stakeholders = StakeholderSystem(world=self.world)
         self.step_count = 0
         self.done = False
-        self.system_health = 1.0
-        self.threat_level = 0.2
-        self.infected_nodes = 1
-        self.total_nodes = 10
-        self.time_pressure = 0
-        self.last_action = "none"
-        self.monitor_reduction_next_step = False
-        self.attacker_type = "stealth" if self.rng.random() < 0.5 else "aggressive"
-        self.action_history = []
-        self.infection_ratio_history = []
-        self.reward_history = []
-        self.pending_effects = []
-        self.isolation_active = False
-        self.prev_infected_nodes = self.infected_nodes
-        self.prev_system_health = self.system_health
-        self.low_infection_streak = 0
-        self.steps_since_patch = 0
-        return self._random_observation()
+        self.last_alerts = []
+        self.episode_reward_totals = []
+        self.noop_streak = 0
+
+    def reset(self, seed: int | None = None, task_id: str | None = None) -> Observation:
+        if seed is not None:
+            self.seed = normalize_seed(seed)
+        if task_id is not None:
+            self.task_id = task_id  # type: ignore[assignment]
+
+        self.__post_init__()
+        self.done = False
+        self.step_count = 0
+        self.episode_reward_totals = []
+        self.noop_streak = 0
+
+        # Task-specific initialization
+        if self.task_id == "alert_triage":
+            alerts: List[dict] = []
+            while len(alerts) < 10:
+                alerts.extend(self.world.step_attacker_and_generate_alerts())
+            self.last_alerts = alerts[:10]
+
+        return self._build_observation(task_score=0.0)
 
     def step(self, action: Action) -> Dict[str, Any]:
         if self.done:
+            obs = self._build_observation(task_score=0.0)
             return {
-                "observation": self._random_observation().model_dump(),
-                "reward": self._random_reward().model_dump(),
+                "observation": obs.model_dump(),
+                "reward": Reward(
+                    security_score=0.0,
+                    uptime_score=0.0,
+                    trust_score=0.0,
+                    speed_score=0.0,
+                    total=0.0,
+                ).model_dump(),
                 "done": True,
                 "info": {"message": "Episode already finished"},
             }
 
-        self.step_count += 1
-        self.last_action = action.action_type
-        self.action_history.append(action.action_type)
-        if len(self.action_history) > 6:
-            self.action_history.pop(0)
-        self.time_pressure = min(50, self.time_pressure + 1)
-        self._update_attacker_strategy(action.action_type)
-        self._apply_pending_effects()
+        # Hard debate gate: if debate pending, only "communicate" counts as argument channel.
+        if self.stakeholders.pending is not None and action.action_type != "communicate":
+            self.noop_streak += 1
+            action = Action(action_type="noop", target=None)
 
-        if action.action_type == "isolate":
-            self.infected_nodes = max(0, self.infected_nodes - 1)
-            if self.threat_level > 0.6:
-                self.infected_nodes = max(2, self.infected_nodes)
-        elif action.action_type == "patch":
-            # Strongest long-term effect: direct threat reduction.
-            self.threat_level = self.threat_level - 0.2
-            self.threat_level = max(0.0, min(1.0, self.threat_level))
-        elif action.action_type == "monitor":
-            self.monitor_reduction_next_step = True
-        elif action.action_type == "ignore":
-            self.threat_level = max(0.0, min(1.0, self.threat_level + 0.05))
-        elif action.action_type == "communicate":
-            pass
-
-        if action.action_type == "patch":
-            self.steps_since_patch = 0
+        if action.action_type == "noop":
+            self.noop_streak += 1
         else:
-            self.steps_since_patch += 1
+            self.noop_streak = 0
 
-        spread = self.threat_level * 0.15
-        if self.steps_since_patch >= 3:
-            # Without patching, attacker pressure steadily increases spread.
-            spread *= 1.0 + min(0.5, 0.05 * (self.steps_since_patch - 2))
-        if self.monitor_reduction_next_step:
-            spread *= 0.5
-            self.monitor_reduction_next_step = False
-        self.infected_nodes += int(spread * self.total_nodes)
-        self.infected_nodes = min(self.infected_nodes, self.total_nodes)
+        info: Dict[str, Any] = {"task_id": self.task_id}
 
-        self.system_health -= self.infected_nodes * 0.01
-        self.system_health = max(0.0, self.system_health)
+        if self.task_id == "alert_triage":
+            return self._step_task1(action, info)
 
-        self.threat_level += 0.02
-        if self.attacker_type == "aggressive":
-            self.threat_level += 0.01
-        if self.steps_since_patch >= 3:
-            # No patch for several steps -> deterministic threat drift upward.
-            self.threat_level += min(0.08, 0.01 * (self.steps_since_patch - 2))
-        self.threat_level = max(0.0, min(1.0, self.threat_level))
+        if self.task_id == "stakeholder_argument":
+            return self._step_task2(action, info)
 
-        if self.step_count >= MAX_STEPS:
-            self.done = True
-
-        current_infection_ratio = self.infected_nodes / max(1, self.total_nodes)
-        if current_infection_ratio < 0.3:
-            self.low_infection_streak += 1
-        else:
-            self.low_infection_streak = 0
-
-        observation = self._random_observation()
-        reward = self._random_reward()
-        infection_ratio = self.infected_nodes / max(1, self.total_nodes)
-        self.infection_ratio_history.append(max(0.0, min(1.0, infection_ratio)))
-        self.reward_history.append(max(0.0, min(1.0, reward.total)))
-        if len(self.infection_ratio_history) > 5:
-            self.infection_ratio_history.pop(0)
-        if len(self.reward_history) > 5:
-            self.reward_history.pop(0)
-        self.prev_infected_nodes = self.infected_nodes
-        self.prev_system_health = self.system_health
-        return {
-            "observation": observation.model_dump(),
-            "reward": reward.model_dump(),
-            "done": self.done,
-            "info": {"step_count": self.step_count},
-        }
+        return self._step_full_episode(action, info)
 
     def get_state(self) -> Dict[str, Any]:
         return {
             "seed": self.seed,
+            "task_id": self.task_id,
             "step_count": self.step_count,
             "done": self.done,
-            "system_health": self.system_health,
-            "threat_level": self.threat_level,
-            "infected_nodes": self.infected_nodes,
-            "total_nodes": self.total_nodes,
-            "time_pressure": self.time_pressure,
-            "last_action": self.last_action,
-            "attacker_type": self.attacker_type,
-            "isolation_active": self.isolation_active,
-            "pending_effects": len(self.pending_effects),
-            "steps_since_patch": self.steps_since_patch,
+            "attacker_position": KILL_CHAIN[min(self.world.attacker_position, len(KILL_CHAIN) - 1)],
+            "nodes": {k: v.__dict__ for k, v in self.world.nodes.items()},
+            "pending_debate": self.stakeholders.pending,
+            "truth_alert_is_fake": dict(self.world.truth_alert_is_fake),
         }
 
-    def _apply_pending_effects(self) -> None:
-        due: list[dict[str, Any]] = []
-        future: list[dict[str, Any]] = []
-        for effect in self.pending_effects:
-            if effect.get("apply_at_step", 0) <= self.step_count:
-                due.append(effect)
-            else:
-                future.append(effect)
-        self.pending_effects = future
+    # --- task implementations ---
 
-        for effect in due:
-            effect_type = effect.get("type")
-            if effect_type == "patch_reduce_threat":
-                # Patch is the main significant threat reducer.
-                self.threat_level = max(0.0, min(1.0, self.threat_level - 0.2))
-            elif effect_type == "end_isolation":
-                self.isolation_active = False
-
-    def _update_attacker_strategy(self, action_type: str) -> None:
-        if action_type == "ignore":
-            self.attacker_type = "aggressive"
-            return
-
-        isolate_count = self.action_history.count("isolate")
-        if isolate_count >= 3:
-            self.attacker_type = "stealth"
-
-    def _random_observation(self) -> Observation:
-        observed_threat_level = self.threat_level + self.rng.uniform(-0.03, 0.03)
-        observed_threat_level = max(0.0, min(1.0, observed_threat_level))
-
-        if self.threat_level > 0.5:
-            severity = "CRITICAL_ALERT"
-        elif self.threat_level > 0.3:
-            severity = "WARNING"
+    def _step_task1(self, action: Action, info: Dict[str, Any]) -> Dict[str, Any]:
+        preds: Dict[str, str] = {}
+        if action.classifications:
+            preds = {k: str(v) for k, v in action.classifications.items()}
         else:
-            severity = "NORMAL"
+            # Back-compat for live baselines that still send monitor/patch proxies.
+            for a in _alerts_for_api(self.last_alerts):
+                aid = str(a["id"])
+                sev = int(a.get("severity", 1))
+                kind = str(a.get("kind", "")).lower()
+                sig = str(a.get("signature", "")).lower()
+                likely_fake = (sev <= 2 and ("scan" in kind or "noise" in kind or "heartbeat" in sig)) or (
+                    float(self.rng.random()) < 0.15
+                )
+                preds[aid] = "fake" if likely_fake else "real"
 
-        # 20% deterministic chance to mislabel severity.
-        if self.rng.random() < 0.2:
-            if severity == "CRITICAL_ALERT":
-                severity = "WARNING"
-            elif severity == "WARNING":
-                severity = "CRITICAL_ALERT"
+        score = grade_task1_alert_triage(preds, self.world.truth_alert_is_fake)
+        reward = Reward(
+            security_score=0.5,
+            uptime_score=0.8,
+            trust_score=0.8,
+            speed_score=1.0,
+            total=float(score),
+        )
+        self.done = True
+        info["task_score"] = float(score)
+        obs = self._build_observation(task_score=float(score))
+        return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": True, "info": info}
+
+    def _step_task2(self, action: Action, info: Dict[str, Any]) -> Dict[str, Any]:
+        target = "auth_server"
+        spec = get_task_spec(self.task_id)
+
+        # If debate isn't open yet, only isolate/patch/monitor should advance the scripted task.
+        # Everything else is a "wait" step: advance the world slightly but do not grade/end early.
+        if self.stakeholders.pending is None and action.action_type not in ("isolate", "patch", "monitor"):
+            self.last_alerts = self.world.step_attacker_and_generate_alerts()
+            self.step_count += 1
+            reward = Reward(security_score=0.45, uptime_score=0.70, trust_score=0.75, speed_score=0.70, total=0.10)
+            done = self.step_count >= spec.max_steps
+            self.done = bool(done)
+            info["hint"] = "open_debate_with_isolate_patch_or_monitor"
+            obs = self._build_observation(task_score=0.0)
+            return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": self.done, "info": info}
+
+        # Stage A: open debate (baseline often sends isolate first)
+        if self.stakeholders.pending is None and action.action_type in ("isolate", "patch", "monitor"):
+            pending = self.stakeholders.open_debate_for_isolation(target_node=target)
+            if pending:
+                allowed = {"auth_anomaly", "lateral_movement", "privilege_escalation"}
+                ev = self.world.ensure_real_evidence_alert(target_node=target, allowed_kinds=allowed)
+                if ev is not None:
+                    self.last_alerts = [ev] + list(self.last_alerts)
+                    info["evidence_injected"] = ev["id"]
+
+            # Debate opening is its own timestep (no attacker progression yet)
+            self.step_count += 1
+            reward = Reward(security_score=0.55, uptime_score=0.75, trust_score=0.85, speed_score=0.9, total=0.65)
+            obs = self._build_observation(task_score=0.0)
+            info["debate_opened"] = pending["decision_id"] if pending else None
+            return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": False, "info": info}
+
+        # Stage B: argue via communicate + optional fields
+        if self.stakeholders.pending is None:
+            # If user skipped opening, open now.
+            self.stakeholders.open_debate_for_isolation(target_node=target)
+
+        pending = self.stakeholders.pending
+        if pending is None:
+            raise RuntimeError("Task2 requires a pending debate state")
+
+        text = action.argument_text or ""
+        citations = list(action.citations or [])
+        if action.action_type == "communicate" and not text:
+            # allow empty communicate to act as weak argument (mostly fails)
+            text = "We should act quickly."
+
+        objections = [o["text"] for o in pending.get("objections", []) if isinstance(o, dict)]
+        scored = grade_task2_stakeholder_argument(
+            target_node=target,
+            objections=objections,
+            argument_text=text,
+            citations=citations,
+            truth_alert_is_fake=self.world.truth_alert_is_fake,
+            alert_node_map=_alert_node_map(self.world),
+        )
+
+        # Also compute stakeholder stance using simulator rubric (includes trust penalties)
+        sim = self.stakeholders.score_argument(
+            reasoning=text,
+            citations=citations,
+            decision_id=str(pending["decision_id"]),
+        )
+
+        stance = str(sim.get("stance"))
+        if stance == "approve":
+            self.world.set_isolation(target, True)
+
+        self.stakeholders.pending = None
+        self.done = True
+
+        score = float(scored["argument_score"])
+        reward = Reward(
+            security_score=0.65,
+            uptime_score=0.70,
+            trust_score=max(0.0, 0.85 - float(sim.get("trust_penalty", 0.0))),
+            speed_score=0.95,
+            total=float(score),
+        )
+        info["task_score"] = score
+        info["debate"] = {"stance": stance, "sim": sim, "tasks": scored}
+        obs = self._build_observation(task_score=score)
+        return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": True, "info": info}
+
+    def _step_full_episode(self, action: Action, info: Dict[str, Any]) -> Dict[str, Any]:
+        # Apply defender actions to world
+        target = action.target
+        if action.action_type == "monitor" and target:
+            # map monitor -> monitoring level 2
+            self.world.set_monitoring_level(target, 2)
+        elif action.action_type == "isolate" and target:
+            if target == "auth_server" and self.stakeholders.pending is None:
+                self.stakeholders.open_debate_for_isolation(target_node=target)
+                info["debate_opened"] = True
             else:
-                severity = "CRITICAL_ALERT"
+                self.world.set_isolation(target, True)
+        elif action.action_type == "patch":
+            # reduce compromise on targeted node if provided, else attacker node
+            node = target or KILL_CHAIN[min(self.world.attacker_position, len(KILL_CHAIN) - 1)]
+            st = self.world.nodes[node]
+            st.compromise_stage = max(0, int(st.compromise_stage) - 1)
+        elif action.action_type == "ignore":
+            pass
+        elif action.action_type == "communicate" and self.stakeholders.pending is not None:
+            pending = self.stakeholders.pending
+            text = action.argument_text or ""
+            citations = list(action.citations or [])
+            sim = self.stakeholders.score_argument(
+                reasoning=text,
+                citations=citations,
+                decision_id=str(pending["decision_id"]),
+            )
+            if str(sim.get("stance")) == "approve":
+                self.world.set_isolation(str(pending.get("target_node")), True)
+            self.stakeholders.pending = None
+            info["debate_resolved"] = sim
 
-        alerts = [severity]
+        # Attacker progression + alerts
+        self.last_alerts = self.world.step_attacker_and_generate_alerts()
 
-        if self.attacker_type == "stealth":
-            # Stealth attacker emits fewer visible alerts.
-            if self.rng.random() < 0.5:
-                alerts = []
-        else:
-            # Aggressive attacker emits noisier/high-volume alert stream.
-            if alerts:
-                alerts = [alerts[0], alerts[0]]
+        reward = self._compute_reward()
+        self.episode_reward_totals.append(float(reward.total))
 
-        infection_ratio = self.infected_nodes / max(1, self.total_nodes)
-        infection_ratio = max(0.0, min(1.0, infection_ratio))
-        if infection_ratio > 0.6:
+        spec = get_task_spec(self.task_id)
+        if self.step_count + 1 >= spec.max_steps:
+            self.done = True
+        if self.world.attacker_reached_database():
+            self.done = True
+            info["terminal"] = "database_breached"
+
+        self.step_count += 1
+        obs = self._build_observation(task_score=float(reward.total))
+        return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": self.done, "info": info}
+
+    def _compute_reward(self) -> Reward:
+        # security: keep DB safe
+        db_stage = int(self.world.nodes["database"].compromise_stage)
+        security_score = 1.0 if db_stage < 3 else 0.0
+
+        # uptime: average availability weighted lightly toward api_gateway
+        avail = [float(self.world.nodes[n].availability) for n in self.world.nodes.keys()]
+        uptime_score = sum(avail) / max(1, len(avail))
+
+        # trust: penalize pending debate too long / noop streak
+        trust_score = 0.85
+        if self.stakeholders.pending is not None:
+            trust_score -= 0.05
+        trust_score -= min(0.25, 0.03 * max(0, self.noop_streak - 2))
+        trust_score = max(0.0, min(1.0, trust_score))
+
+        # speed: prefer early containment
+        spec = get_task_spec(self.task_id)
+        speed_score = 1.0 - (self.step_count / max(1, spec.max_steps))
+
+        total = 0.35 * security_score + 0.30 * uptime_score + 0.25 * trust_score + 0.10 * speed_score
+        total = max(0.0, min(1.0, total))
+
+        return Reward(
+            security_score=float(security_score),
+            uptime_score=float(uptime_score),
+            trust_score=float(trust_score),
+            speed_score=float(speed_score),
+            total=float(total),
+        )
+
+    def _build_observation(self, *, task_score: float) -> Observation:
+        # system_health/threat_level are summary signals for baselines
+        avail = [float(self.world.nodes[n].availability) for n in self.world.nodes.keys()]
+        system_health = sum(avail) / max(1, len(avail))
+
+        stages = [int(self.world.nodes[n].compromise_stage) for n in KILL_CHAIN]
+        threat_level = min(1.0, sum(stages) / 12.0)
+
+        infected = sum(stages)
+        infection_ratio = min(1.0, infected / 12.0)
+
+        if infection_ratio > 0.55 or threat_level > 0.65:
             status = "critical"
-        elif infection_ratio > 0.3:
+        elif infection_ratio > 0.25 or threat_level > 0.35:
             status = "warning"
         else:
             status = "stable"
 
-        history_summary = self._history_summary()
+        resources_available = sum(1 for n in self.world.nodes.values() if not n.isolated)
 
-        return Observation(
-            step=self.step_count,
-            system_health=self.system_health,
-            threat_level=observed_threat_level,
-            alerts=alerts,
-            resources_available=max(0, self.total_nodes - self.infected_nodes),
-            infection_ratio=infection_ratio,
-            status=status,
-            history_summary=history_summary,
-        )
-
-    def _history_summary(self) -> dict[str, Any]:
-        history_len = min(
-            len(self.action_history), len(self.infection_ratio_history), len(self.reward_history)
-        )
-        if history_len == 0:
-            return {
-                "window_size": 0,
-                "recent_action": "none",
-                "avg_infection_ratio": 0.0,
-                "infection_trend": "flat",
-                "avg_reward": 0.0,
-                "reward_trend": "flat",
-            }
-
-        recent_action = self.action_history[-1]
-        avg_infection_ratio = sum(self.infection_ratio_history) / len(self.infection_ratio_history)
-        avg_reward = sum(self.reward_history) / len(self.reward_history)
-
-        infection_trend = "flat"
-        if len(self.infection_ratio_history) >= 2:
-            if self.infection_ratio_history[-1] < self.infection_ratio_history[0]:
-                infection_trend = "down"
-            elif self.infection_ratio_history[-1] > self.infection_ratio_history[0]:
-                infection_trend = "up"
-
-        reward_trend = "flat"
-        if len(self.reward_history) >= 2:
-            if self.reward_history[-1] > self.reward_history[0]:
-                reward_trend = "up"
-            elif self.reward_history[-1] < self.reward_history[0]:
-                reward_trend = "down"
-
-        return {
-            "window_size": history_len,
-            "recent_action": recent_action,
-            "avg_infection_ratio": round(avg_infection_ratio, 4),
-            "infection_trend": infection_trend,
-            "avg_reward": round(avg_reward, 4),
-            "reward_trend": reward_trend,
+        history_summary = {
+            "recent_action": "none",
+            "window_size": min(6, self.step_count),
         }
 
-    def _random_reward(self) -> Reward:
-        # Simple deterministic reward: no extra bonuses/penalties.
-        security_score = 1.0 - (self.infected_nodes / max(1, self.total_nodes))
-        security_score = max(0.0, min(1.0, security_score))
-
-        uptime_score = max(0.0, min(1.0, self.system_health))
-
-        # Communicate has no reward impact for now.
-        trust_score = 0.7
-        trust_score = max(0.0, min(1.0, trust_score))
-
-        speed_score = 1.0 - (self.time_pressure / 50.0)
-        speed_score = max(0.0, min(1.0, speed_score))
-
-        # Weighted deterministic priority: survival > uptime > behavior.
-        total = (
-            0.6 * security_score
-            + 0.25 * uptime_score
-            + 0.1 * speed_score
-            + 0.05 * trust_score
-        )
-
-        total = max(0.0, min(1.0, total))
-
-        return Reward(
-            security_score=security_score,
-            uptime_score=uptime_score,
-            trust_score=trust_score,
-            speed_score=speed_score,
-            total=total,
+        return Observation(
+            task_id=self.task_id,
+            step=self.step_count,
+            done=self.done,
+            system_health=float(system_health),
+            threat_level=float(threat_level),
+            infection_ratio=float(infection_ratio),
+            status=status,
+            resources_available=int(resources_available),
+            history_summary=history_summary,
+            alerts=_alerts_for_api(self.last_alerts),
+            pending_debate=self.stakeholders.pending,
+            task_score=float(task_score),
         )

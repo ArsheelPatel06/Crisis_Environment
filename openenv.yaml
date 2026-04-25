@@ -1,3 +1,28 @@
 name: cyber-crisis-env
+version: "0.2.0"
 entrypoint: server.main:app
-description: Cyber Crisis Simulation
+description: >
+  Cyber crisis incident-response environment with deceptive alerts, stakeholder debate,
+  and deterministic task graders.
+tags:
+  - cybersecurity
+  - adversarial
+  - decision-making
+  - openenv
+tasks:
+  - id: alert_triage
+    name: "Alert Triage"
+    difficulty: easy
+  - id: stakeholder_argument
+    name: "Stakeholder Argument"
+    difficulty: medium
+  - id: full_crisis_episode
+    name: "Full Crisis Episode"
+    difficulty: hard
+reward:
+  range: [0.0, 1.0]
+  dimensions: [security_score, uptime_score, trust_score, speed_score]
+interface:
+  reset: "POST /reset"
+  step: "POST /step"
+  state: "GET /state"

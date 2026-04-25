@@ -122,3 +122,35 @@ class CompanyWorld:
         self.alerts_by_id[alert_id] = alert
         self.truth_alert_is_fake[alert_id] = is_fake
         return alert
+
+    def is_real_alert(self, alert_id: str) -> bool:
+        return not bool(self.truth_alert_is_fake.get(alert_id, True))
+
+    def alert_node(self, alert_id: str) -> str | None:
+        alert = self.alerts_by_id.get(alert_id)
+        if not alert:
+            return None
+        return str(alert.get("node"))
+
+    def ensure_real_evidence_alert(self, *, target_node: str, allowed_kinds: set[str]) -> dict | None:
+        """Inject a single real evidence alert if none exists for grading/debate.
+
+        This does not advance attacker progression; it only registers a new alert.
+        """
+        for alert in self.alerts_by_id.values():
+            aid = str(alert.get("id"))
+            if not aid:
+                continue
+            if self.is_real_alert(aid) and str(alert.get("node")) == target_node:
+                # severity is a string label; treat as evidence-ish
+                if str(alert.get("message", "")).lower() in {k.lower() for k in allowed_kinds}:
+                    return None
+
+        kind = sorted(list(allowed_kinds))[0]
+        # Use a high-severity label for visibility in baselines that parse severity strings.
+        return self._register_alert(
+            node=target_node,
+            severity="critical",
+            message=kind,
+            is_fake=False,
+        )

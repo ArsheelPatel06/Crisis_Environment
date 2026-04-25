@@ -12,7 +12,7 @@ import os
 import random
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import requests
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -26,6 +26,11 @@ from server.tasks import (
     grade_task1_alert_triage,
     grade_task2_stakeholder_argument,
     grade_task3_full_episode,
+)
+from training.policy_heuristic import (
+    choose_task1_action_dict,
+    choose_task2_action_dict,
+    choose_task3_action_dict,
 )
 
 RESULTS_DIR = PROJECT_ROOT / "results"
@@ -112,52 +117,6 @@ def _live_step(base_url: str, action: Dict[str, Any]) -> Tuple[Dict[str, Any], f
     return observation, reward_total, done, info
 
 
-def _normalize_alerts(observation: Dict[str, Any]) -> List[Dict[str, Any]]:
-    normalized: List[Dict[str, Any]] = []
-    raw_alerts = observation.get("alerts", [])
-    if not isinstance(raw_alerts, list):
-        return normalized
-
-    for idx, alert in enumerate(raw_alerts):
-        if isinstance(alert, dict):
-            alert_id = str(alert.get("id", f"alert_{idx}"))
-            normalized.append(
-                {
-                    "id": alert_id,
-                    "node": str(alert.get("node", "auth_server")),
-                    "severity": int(alert.get("severity", 3)),
-                    "kind": str(alert.get("kind", "")),
-                    "signature": str(alert.get("signature", "")),
-                }
-            )
-            continue
-
-        if isinstance(alert, str):
-            sev = 3
-            upper = alert.upper()
-            if "CRITICAL" in upper:
-                sev = 5
-            elif "WARNING" in upper:
-                sev = 4
-            elif "NORMAL" in upper:
-                sev = 2
-            normalized.append(
-                {
-                    "id": f"alert_{idx}",
-                    "node": "auth_server",
-                    "severity": sev,
-                    "kind": upper.lower(),
-                    "signature": upper.lower(),
-                }
-            )
-    return normalized
-
-
-def _format_action(action_type: str, target: str = "auth_server") -> Dict[str, Any]:
-    # Current env-core expects this action schema.
-    return {"action_type": action_type, "target": target}
-
-
 def _score_from_rollout(
     reward_history: List[float], final_observation: Dict[str, Any], final_info: Dict[str, Any]
 ) -> float:
@@ -174,81 +133,26 @@ def _score_from_rollout(
     return _clip01(final_observation.get("task_score", 0.0))
 
 
-def _choose_task1_action(observation: Dict[str, Any], rng: random.Random) -> Dict[str, Any]:
-    classifications: Dict[str, str] = {}
-    for alert in _normalize_alerts(observation):
-        alert_id = alert.get("id")
-        if not alert_id:
-            continue
-        severity = int(alert.get("severity", 1))
-        kind = str(alert.get("kind", "")).lower()
-        signature = str(alert.get("signature", "")).lower()
-        # Deterministic, weak-but-reasonable baseline heuristic.
-        likely_fake = (
-            severity <= 2
-            and ("scan" in kind or "noise" in kind or "heartbeat" in signature)
-        ) or (rng.random() < 0.15)
-        classifications[alert_id] = "fake" if likely_fake else "real"
-
-    # Current server action model does not support classify_alerts yet.
-    # Use monitor/ignore proxy actions based on fake ratio.
-    fake_ratio = (sum(1 for v in classifications.values() if v == "fake") / max(1, len(classifications)))
-    if fake_ratio > 0.5:
-        return _format_action("monitor")
-    return _format_action("patch")
-
-
-def _choose_task2_action(observation: Dict[str, Any], requested: bool) -> Dict[str, Any]:
-    threat = float(observation.get("threat_level", 0.0))
-    status = str(observation.get("status", "stable")).lower()
-    if threat >= 0.55 or status == "critical":
-        return _format_action("isolate")
-    if requested:
-        return _format_action("communicate")
-    return _format_action("monitor")
-
-
-def _choose_task3_action(observation: Dict[str, Any], rng: random.Random) -> Dict[str, Any]:
-    alerts = _normalize_alerts(observation)
-    if alerts:
-        # Prioritize highest-severity node.
-        highest = max(alerts, key=lambda a: int(a.get("severity", 1)))
-        node = highest.get("node")
-        if node:
-            if int(highest.get("severity", 1)) >= 4 and rng.random() < 0.7:
-                return _format_action("isolate", target=node)
-            if rng.random() < 0.5:
-                return _format_action("monitor", target=node)
-            return _format_action("patch", target=node)
-
-    # Small deterministic exploration baseline.
-    fallback_nodes = ["api_gateway", "internal_tools", "auth_server", "comms"]
-    return _format_action("monitor", target=rng.choice(fallback_nodes))
-
-
 def _run_task_live(base_url: str, task_id: str, seed: int, max_steps: int) -> float:
-    observation = _live_reset(base_url=base_url, task_id=task_id, seed=seed)
-    done = bool(observation.get("done", False))
-    reward_history: List[float] = []
-    final_info: Dict[str, Any] = {}
-    requested_approval = False
-
-    step_idx = 0
     task_offsets = {
         "alert_triage": 101,
         "stakeholder_argument": 202,
         "full_crisis_episode": 303,
     }
     rng = random.Random(seed + task_offsets.get(task_id, 0))
+    observation = _live_reset(base_url=base_url, task_id=task_id, seed=seed)
+    done = bool(observation.get("done", False))
+    reward_history: List[float] = []
+    final_info: Dict[str, Any] = {}
+    step_idx = 0
+
     while not done and step_idx < max_steps:
         if task_id == "alert_triage":
-            action = _choose_task1_action(observation, rng)
+            action = choose_task1_action_dict(observation, rng)
         elif task_id == "stakeholder_argument":
-            action = _choose_task2_action(observation, requested=requested_approval)
-            if action.get("kind") == "request_approval":
-                requested_approval = True
+            action = choose_task2_action_dict(observation, rng)
         else:
-            action = _choose_task3_action(observation, rng)
+            action = choose_task3_action_dict(observation, rng)
 
         observation, reward_total, done, info = _live_step(base_url, action)
         reward_history.append(_clip01(reward_total))
@@ -304,8 +208,8 @@ def write_baseline_report(
             f"- `full_crisis_episode`: {scores['full_crisis_episode']:.4f}",
             "",
             "## Notes",
-            "- Scores are deterministic for the same seed and config.",
-            "- Replace heuristic live baseline with LLM policy calls as integration matures.",
+            "- Scores are deterministic for the same seed and config when using the same heuristic policy.",
+            "- `alert_triage` live step posts `classifications` in the action JSON; Task2 opens debate then uses `communicate` when `pending_debate` is set.",
             "",
         ]
     )
@@ -375,4 +279,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
