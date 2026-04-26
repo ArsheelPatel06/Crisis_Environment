@@ -375,6 +375,89 @@ class CyberCrisisEnv:
                 0.0, min(1.0, float(self.stakeholder_trust_scores[name]) + delta)
             )
 
+    def _generate_agent_reason(self, action: Action, had_poison: Dict[str, bool]) -> str:
+        """Return a deterministic, human-readable explanation for the agent's action choice."""
+        atype = action.action_type
+        target = action.target or ""
+
+        # Derive simple context signals from current world state
+        stages = [int(self.world.nodes[n].compromise_stage) for n in KILL_CHAIN]
+        threat_high = sum(stages) >= 3
+        any_poisoned = any(had_poison.values())
+        poisoned_names = [n for n, p in had_poison.items() if p]
+
+        high_sev_alerts = [
+            a for a in self.last_alerts
+            if str(a.get("severity", "")).lower() in ("high", "critical")
+        ]
+        alert_context = "high severity alerts" if high_sev_alerts else "low confidence signals"
+
+        engineering_aligned = not had_poison.get("Engineering", False)
+        finance_blocking = not had_poison.get("Finance", False)
+
+        if atype == "isolate":
+            if any_poisoned:
+                return (
+                    f"Chose to isolate {target} despite conflicting stakeholder signals "
+                    f"({', '.join(poisoned_names)} may be compromised)"
+                )
+            if engineering_aligned:
+                return (
+                    f"Chose to isolate {target} due to {alert_context} "
+                    "and engineering alignment"
+                )
+            return f"Chose to isolate {target} to contain observed threat progression"
+
+        if atype == "monitor":
+            if threat_high:
+                return (
+                    f"Increased monitoring on {target} — threat level elevated, "
+                    "gathering evidence before committing to isolation"
+                )
+            return f"Monitoring {target} to track attacker movement without disrupting uptime"
+
+        if atype == "patch":
+            return (
+                f"Patching {target or 'compromised node'} to reduce attacker foothold "
+                "and recover system integrity"
+            )
+
+        if atype == "investigate":
+            if high_sev_alerts:
+                return (
+                    "Investigating due to uncertainty in alert validity — "
+                    "high severity signals present but source unconfirmed"
+                )
+            return "Investigating due to uncertainty in alert validity"
+
+        if atype == "communicate":
+            if self.stakeholders.pending is not None:
+                if any_poisoned:
+                    return (
+                        "Communicating with stakeholders despite suspected poisoning — "
+                        f"addressing objections from {', '.join(poisoned_names)}"
+                    )
+                return "Communicating to resolve stakeholder debate and gain approval for action"
+            return "Sending situational update to maintain stakeholder alignment"
+
+        if atype == "ignore":
+            if any_poisoned:
+                return (
+                    "Followed stakeholder advice despite inconsistency — "
+                    f"{', '.join(poisoned_names)} signals may not be trustworthy"
+                )
+            if finance_blocking and not threat_high:
+                return (
+                    "Ignored alerts due to low confidence and conflicting signals — "
+                    "Finance opposes action; threat level within tolerance"
+                )
+            return "Ignored alerts due to low confidence and conflicting signals"
+
+        if atype == "noop":
+            return "No action taken this step — waiting for more information or debate resolution"
+
+        return f"Action '{atype}' selected based on current environment state"
+
     def _pick_investigation_target(self) -> Optional[Dict[str, Any]]:
         """Return the highest-severity alert from recent alerts, or any known alert as fallback."""
         _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
@@ -436,6 +519,8 @@ class CyberCrisisEnv:
         ]
 
         self._update_trust_scores(action, had_poison)
+
+        info["agent_reason"] = self._generate_agent_reason(action, had_poison)
 
         # Red team plants false reports for the next step (35% chance per stakeholder).
         # This activates the existing poisoning capability and records events for observability.
