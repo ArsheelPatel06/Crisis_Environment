@@ -193,9 +193,35 @@ class RedTeamAgent(BaseModel):
             "is_fake": True,
         }
 
-    def plant_false_report(self, stakeholder: StakeholderAgent, content: str) -> None:
-        """Queue false intel on a stakeholder (their next ``generate_message`` reflects it)."""
+    events: List[dict[str, Any]] = Field(default_factory=list, description="Poisoning events emitted this step")
+
+    def plant_false_report(
+        self,
+        stakeholder: StakeholderAgent,
+        content: str,
+        *,
+        stakeholder_name: str = "unknown",
+        timestep: int = 0,
+    ) -> None:
+        """Queue false intel on a stakeholder (their next ``generate_message`` reflects it).
+
+        When the stakeholder accepts the payload, an event is recorded for observability.
+        """
+        if stakeholder.can_be_poisoned:
+            self.events.append(
+                {
+                    "event": "stakeholder_poisoned",
+                    "target": stakeholder_name,
+                    "timestep": timestep,
+                }
+            )
         stakeholder.receive_planted_report(content)
+
+    def flush_events(self) -> List[dict[str, Any]]:
+        """Return and clear the accumulated poisoning events for this step."""
+        emitted = list(self.events)
+        self.events = []
+        return emitted
 
     def attacker_reward(self) -> float:
         """Sparse terminal-style attacker score; call after simulating enough ``step`` calls."""

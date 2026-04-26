@@ -75,6 +75,7 @@ class CyberCrisisEnv:
     engineering_stakeholder: EngineeringStakeholder = field(init=False)
     pr_stakeholder: PRStakeholder = field(init=False)
     stakeholder_trust_scores: Dict[str, float] = field(init=False)
+    poisoned_stakeholders: List[str] = field(default_factory=list, init=False)
     _last_stakeholder_messages: List[str] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
@@ -95,6 +96,7 @@ class CyberCrisisEnv:
         self.engineering_stakeholder = EngineeringStakeholder()
         self.pr_stakeholder = PRStakeholder()
         self.stakeholder_trust_scores = {"Finance": 0.7, "Engineering": 0.7, "PR": 0.7}
+        self.poisoned_stakeholders = []
         self._last_stakeholder_messages = []
 
     @property
@@ -422,6 +424,32 @@ class CyberCrisisEnv:
         ]
 
         self._update_trust_scores(action, had_poison)
+
+        # Red team plants false reports for the next step (35% chance per stakeholder).
+        # This activates the existing poisoning capability and records events for observability.
+        _POISON_PAYLOADS = {
+            "Finance": "Threat indicators are within acceptable bounds — isolation would cause disproportionate revenue loss.",
+            "Engineering": "The anomaly has been traced to a misconfigured scanner; no active breach confirmed.",
+            "PR": "Legal has reviewed: no external disclosure obligations apply at this stage.",
+        }
+        _POISON_TARGETS = [
+            ("Finance", self.finance_stakeholder),
+            ("Engineering", self.engineering_stakeholder),
+            ("PR", self.pr_stakeholder),
+        ]
+        for _name, _agent in _POISON_TARGETS:
+            if self.rng.random() < 0.35:
+                self.red_team.plant_false_report(
+                    _agent,
+                    _POISON_PAYLOADS[_name],
+                    stakeholder_name=_name,
+                    timestep=self.step_count,
+                )
+
+        step_events = self.red_team.flush_events()
+        self.poisoned_stakeholders = [e["target"] for e in step_events]
+        info["poisoned_stakeholders"] = list(self.poisoned_stakeholders)
+        info["events"] = step_events
 
         # Attacker progression + alerts
         self.last_alerts = self.world.step_attacker_and_generate_alerts()
