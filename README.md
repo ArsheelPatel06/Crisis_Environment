@@ -313,7 +313,7 @@ Every grader returns a score in `[0.0, 1.0]`. Rewards are deterministic given th
 | OpenEnv validation | **6 / 6 passed** (`openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space`) |
 | Colab notebook | _add "Open in Colab" badge_ |
 | Video (90 s – 2 min) | _YouTube / Loom_ |
-| Trained weights | _HF model repo or release zip of `grpo/final`_ |
+| Trained weights (LoRA) | `https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora` |
 
 ---
 
