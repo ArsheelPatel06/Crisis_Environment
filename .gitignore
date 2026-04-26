@@ -10,3 +10,5 @@ env/
 
 # Local tooling venvs
 .uv_tool/
+outputs/
+outputs/
