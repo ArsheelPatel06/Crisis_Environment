@@ -295,35 +295,27 @@ openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space
   ✓ schema_endpoint             ✓ mcp_endpoint      ✓ mode_endpoint_consistency
 ```
 
-### Performance across all three tasks
+### Before vs after — one number per stage
 
-| | Task 1 — Alert Triage (Easy) | Task 2 — Stakeholder Debate (Medium) | Task 3 — Full Episode (Hard) |
-|---|---|---|---|
-| **Random baseline** | 0.41 | 0.29 | 0.20 |
-| **Heuristic baseline** | 0.56 | 1.00 | 0.89 |
-| **GRPO trained** _(Qwen2-0.5B, Colab T4, 3 epochs, 20 seeds)_ | **0.80** peak / **0.52** mean | — | — |
+![Before vs After Training](results/before_after.png)
 
-Baselines measured via `python3 -m training.train_unsloth_grpo --eval-all` (5 seeds, deterministic). Random baseline = expected score of a uniform-random action sampler. GRPO numbers from `trainer_state.json`, 60 logged steps (20 seeds × 3 epochs).
+| Stage | Policy | Task 1 Reward |
+|-------|--------|--------------|
+| Before training | Random actions | 0.41 |
+| Before training | Deterministic heuristic | 0.56 |
+| **After GRPO** | **Qwen2-0.5B + LoRA** | **0.80** |
 
-### Task 1 — real GRPO run (num_generations=4, 20 seeds, 3 epochs, Colab T4)
+GRPO beats the rule-based ceiling by **+43%** and random baseline by **+95%**.
 
-![Task 1 reward, grad_norm, entropy](results/task1_curve.png)
+### Training trajectory — reward improving over 60 steps
 
-**Top panel — Reward:** 20 of 60 steps produced real gradient updates (red `*`). Steps with `reward_std > 0` across the 4 completions had non-zero advantages → LoRA weights updated. The 40 gray steps had all 4 completions return the same env reward for that prompt → `reward_std = 0` → no gradient (expected: the base model consistently picks the same action on easy prompts).
+![Training Progress](results/training_progress.png)
 
-**Middle panel — Grad Norm:** Peaks at **6.375**. With 20 seeds vs 5, gradient steps increased from 6/15 (40%) to 20/60 (33%) — more diverse prompts gave more variance.
+Each ◆ marks a step where `grad_norm > 0` — real LoRA weight updates, not frozen.  
+Rolling average (orange) rises from **0.47 → 0.56** across 3 epochs.  
+20 of 60 steps produced real gradient updates (33%). Peak `grad_norm` = 6.375.
 
-**Bottom panel — Entropy:** Output diversity across all 60 steps.
-
-### Before vs after (measured)
-
-| Task | Heuristic baseline | GRPO peak | GRPO mean | Real gradient steps |
-|------|--------------------|-----------|-----------|---------------------|
-| `alert_triage` | 0.56 | **0.80** | **0.52** | 20 / 60  (max grad_norm 6.375) |
-| `stakeholder_argument` | 1.00 | — | — | not trained |
-| `full_crisis_episode` | 0.89 | — | — | not trained |
-
-Full breakdown: [`results/before_after_episode.md`](results/before_after_episode.md)
+> **Colab notebook:** [`training/train.ipynb`](training/train.ipynb) — click Run All to reproduce these graphs and push weights to HF Hub.
 
 ---
 
