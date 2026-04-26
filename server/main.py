@@ -20,6 +20,31 @@ class StepResponse(BaseModel):
     info: dict[str, Any]
 
 
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "name": "Adversarial Cyber Crisis Simulator",
+        "version": "0.2.0",
+        "status": "running",
+        "description": (
+            "Multi-agent incident-response RL environment. "
+            "Red-team attacker advances a kill chain while a blue-team LLM agent "
+            "classifies alerts, debates stakeholders, and contains the breach."
+        ),
+        "endpoints": {
+            "POST /reset": "Start a new episode",
+            "POST /step": "Send an action, receive observation + reward",
+            "GET /state": "Full internal state (debug)",
+            "GET /health": "Health check",
+            "GET /metadata": "Environment metadata",
+            "GET /schema": "Action / Observation JSON schemas",
+            "POST /mcp": "OpenEnv MCP stub",
+        },
+        "tasks": ["alert_triage", "stakeholder_argument", "full_crisis_episode"],
+        "docs": "/docs",
+    }
+
+
 @app.post("/reset", response_model=Observation)
 def reset(seed: int = Query(default=0), task_id: TaskId = Query(default="full_crisis_episode")) -> Observation:
     observation = env.reset(seed=seed, task_id=task_id)
