@@ -18,28 +18,20 @@ if _ROOT not in sys.path:
 """
 
 CELL1 = r"""# === Cell 1: Colab — clone + pip (run first; set Runtime -> GPU) ===
-import os, sys, subprocess
+import os, shlex, subprocess, sys
 
+print("Colab setup v5 — if traceback mentions shutil.rmtree, reload notebook from GitHub.")
+subprocess.run(["git", "--version"], check=True)
 REPO = "https://github.com/ArsheelPatel06/Crisis_Environment.git"
 BRANCH = "review/team-pull"
 ROOT = "/content/Cyber_Crisis"
-
-def _git_clone():
-    subprocess.run(["rm", "-rf", ROOT], check=False)
-    cp = subprocess.run(
-        ["git", "clone", "-b", BRANCH, "--depth", "1", REPO, ROOT],
-        capture_output=True,
-        text=True,
-    )
-    if cp.returncode != 0:
-        print("---- git clone stdout ----\n", cp.stdout)
-        print("---- git clone stderr ----\n", cp.stderr)
-        raise RuntimeError(
-            f"git clone failed (code {cp.returncode}). Re-run the cell. Check GitHub + network."
-        )
-
-subprocess.run(["git", "--version"], check=True)
-_git_clone()
+q = shlex.quote
+shell = f"set -e; rm -rf {q(ROOT)} && git clone -b {q(BRANCH)} --depth 1 {q(REPO)} {q(ROOT)}"
+r = subprocess.run(shell, shell=True, capture_output=True, text=True, executable="/bin/bash")
+if r.returncode != 0:
+    print("---- bash stdout ----\n", r.stdout)
+    print("---- bash stderr ----\n", r.stderr)
+    raise RuntimeError(f"git clone failed: {r.returncode}")
 pproj = os.path.join(ROOT, "pyproject.toml")
 if not os.path.isfile(pproj):
     raise FileNotFoundError(
