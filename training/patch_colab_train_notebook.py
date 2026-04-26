@@ -18,15 +18,28 @@ if _ROOT not in sys.path:
 """
 
 CELL1 = r"""# === Cell 1: Colab — clone + pip (run first; set Runtime -> GPU) ===
-import os, sys, shutil, subprocess
+import os, sys, subprocess
 
 REPO = "https://github.com/ArsheelPatel06/Crisis_Environment.git"
 BRANCH = "review/team-pull"
 ROOT = "/content/Cyber_Crisis"
-if os.path.isdir(ROOT):
-    shutil.rmtree(ROOT, ignore_errors=True)
 
-subprocess.check_call(["git", "clone", "-b", BRANCH, "--depth", "1", REPO, ROOT])
+def _git_clone():
+    subprocess.run(["rm", "-rf", ROOT], check=False)
+    cp = subprocess.run(
+        ["git", "clone", "-b", BRANCH, "--depth", "1", REPO, ROOT],
+        capture_output=True,
+        text=True,
+    )
+    if cp.returncode != 0:
+        print("---- git clone stdout ----\n", cp.stdout)
+        print("---- git clone stderr ----\n", cp.stderr)
+        raise RuntimeError(
+            f"git clone failed (code {cp.returncode}). Re-run the cell. Check GitHub + network."
+        )
+
+subprocess.run(["git", "--version"], check=True)
+_git_clone()
 pproj = os.path.join(ROOT, "pyproject.toml")
 if not os.path.isfile(pproj):
     raise FileNotFoundError(
