@@ -11,9 +11,7 @@ tags:
   - reinforcement-learning
   - adversarial
 license: apache-2.0
-short_description: >
-  Multi-agent incident-response RL env — red-team attacker, deceptive alerts,
-  stakeholder debate, three graded tasks.
+short_description: "Adversarial incident-response RL env (OpenEnv)"
 ---
 
 # Adversarial Cyber Crisis Simulator (OpenEnv)
