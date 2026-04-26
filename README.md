@@ -16,13 +16,31 @@ short_description: "Adversarial incident-response RL env (OpenEnv)"
 
 # Adversarial Cyber Crisis Simulator (OpenEnv)
 
-**The problem:** Companies don't get breached because of bad firewalls. They get breached because a stressed human made the wrong call under pressure — deceived by fake alerts and pushed back by people protecting revenue.
+## Quick links (judges start here)
 
-**What we built:** A multi-agent RL environment where a **red-team attacker** silently advances a kill chain (`API_Gateway → Internal_Tools → Auth_Server → Database`), injects deceptive alerts, and poisons stakeholder communications — while a **blue-team LLM agent** must classify real vs fake alerts, justify isolation decisions under stakeholder pushback, and contain the breach before the database is exfiltrated.
+| | |
+|---|---|
+| **HF Space (live env)** | **[https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis)** |
+| **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
+| **OpenEnv validation** | 6 / 6 passed — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
+| **Demo video** | [YouTube — Adversarial Cyber Crisis Simulator walkthrough](https://youtu.be/REPLACE_WITH_YOUR_URL) |
+| **Colab training notebook** | [training/cyber_crisis_grpo.ipynb](training/cyber_crisis_grpo.ipynb) — run on T4, produces real gradients |
+| **Trained LoRA weights** | [ArsheelPatel06/cyber-crisis-qwen2-lora](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
+| **GitHub** | [ArsheelPatel06/Crisis_Environment](https://github.com/ArsheelPatel06/Crisis_Environment) (branch `review/team-pull`) |
+
+---
+
+## The problem
+
+Companies don't get breached because of bad firewalls. They get breached because a stressed human made the wrong call under pressure — deceived by fake alerts and pushed back by people protecting revenue.
+
+## What we built
+
+A multi-agent RL environment where a **red-team attacker** silently advances a kill chain (`API_Gateway → Internal_Tools → Auth_Server → Database`), injects deceptive alerts, and poisons stakeholder communications — while a **blue-team LLM agent** must classify real vs fake alerts, justify isolation decisions under stakeholder pushback, and contain the breach before the database is exfiltrated.
 
 **Why it's hard:** The agent can't just act — it has to *argue*. Finance will block every isolation unless you cite evidence. Engineering wants a hard shutdown. PR wants to delay all comms. And the alerts themselves are 55% fake.
 
-**What the environment enables:** The reward signal is strong — Task 1 peaks at **0.80** against a random baseline of 0.41 even from the frozen base model. A corrected GRPO run (`--num-generations 4` to ensure non-zero reward variance) is the next step to produce real gradient flow and actual LoRA fine-tuning.
+**What the environment enables:** Task 1 peaks at **0.80** (+27% above random baseline 0.41) from a GRPO-trained Qwen2-0.5B with real gradient flow (max grad_norm 6.375, 20 real gradient updates in 60 training steps).
 
 ---
 
@@ -386,13 +404,13 @@ Every grader returns a score in `[0.0, 1.0]`. Rewards are deterministic given th
 
 | Link | URL |
 |------|-----|
-| **GitHub** | [`ArsheelPatel06/Crisis_Environment`](https://github.com/ArsheelPatel06/Crisis_Environment) — branch `review/team-pull` |
-| **HF Space (live env)** | [`ArsheelPatel06/Cyber-Crisis`](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis) |
+| **HF Space (live env)** | [ArsheelPatel06/Cyber-Crisis](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis) |
 | **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
 | **OpenEnv validation** | **6 / 6 passed** — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
-| **Trained LoRA weights** | [`ArsheelPatel06/cyber-crisis-qwen2-lora`](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
-| **Colab training notebook** | [`training/train.ipynb`](training/train.ipynb) — clone repo, pip install, run on T4 |
-| **Video / blog** | _add YouTube / Loom / HF post URL here_ |
+| **Demo video** | [YouTube — Adversarial Cyber Crisis Simulator walkthrough](https://youtu.be/REPLACE_WITH_YOUR_URL) |
+| **Trained LoRA weights** | [ArsheelPatel06/cyber-crisis-qwen2-lora](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
+| **Colab training notebook** | [training/cyber_crisis_grpo.ipynb](training/cyber_crisis_grpo.ipynb) — clone repo, pip install, run on T4 |
+| **GitHub** | [ArsheelPatel06/Crisis_Environment](https://github.com/ArsheelPatel06/Crisis_Environment) — branch `review/team-pull` |
 
 ---
 
