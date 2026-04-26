@@ -21,7 +21,8 @@ short_description: "Adversarial incident-response RL env (OpenEnv)"
 | | |
 |---|---|
 | **HF Space (live env)** | **[https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis)** |
-| **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
+|| **Live Dashboard** | **[https://arsheelpatel06-cyber-crisis.hf.space/dashboard/index.html](https://arsheelpatel06-cyber-crisis.hf.space/dashboard/index.html)** — war room, 5 panels, auto-step demo |
+|| **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
 | **OpenEnv validation** | 6 / 6 passed — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
 | **Demo video** | [YouTube — Adversarial Cyber Crisis Simulator walkthrough](https://youtu.be/REPLACE_WITH_YOUR_URL) |
 | **Colab training notebook** | [training/cyber_crisis_grpo.ipynb](training/cyber_crisis_grpo.ipynb) — run on T4, produces real gradients |

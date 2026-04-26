@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from server.env import CyberCrisisEnv
@@ -10,6 +13,17 @@ from server.models import Action, Observation, Reward, TaskId
 
 
 app = FastAPI(title="OpenEnv Cyber Crisis Simulator", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+_DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
+if _DASHBOARD_DIR.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="dashboard")
 env = CyberCrisisEnv(seed=0, task_id="full_crisis_episode")
 
 
