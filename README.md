@@ -20,14 +20,14 @@ short_description: "Adversarial incident-response RL env (OpenEnv)"
 
 | | |
 |---|---|
-| **HF Space (live env)** | **[https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis)** |
-|| **Live Dashboard** | **[https://arsheelpatel06-cyber-crisis.hf.space/dashboard/index.html](https://arsheelpatel06-cyber-crisis.hf.space/dashboard/index.html)** — war room, 5 panels, auto-step demo |
-|| **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
-| **OpenEnv validation** | 6 / 6 passed — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
-| **Demo video** | [YouTube — Adversarial Cyber Crisis Simulator walkthrough](https://youtu.be/REPLACE_WITH_YOUR_URL) |
-| **Colab training notebook** | [training/cyber_crisis_grpo.ipynb](training/cyber_crisis_grpo.ipynb) — run on T4, produces real gradients |
-| **Trained LoRA weights** | [ArsheelPatel06/cyber-crisis-qwen2-lora](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
-| **GitHub** | [ArsheelPatel06/Crisis_Environment](https://github.com/ArsheelPatel06/Crisis_Environment) (branch `review/team-pull`) |
+| **HF Space (live env)** | [https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis) |
+| **Live Dashboard** | [https://arsheelpatel06-cyber-crisis.hf.space/dashboard/index.html](https://arsheelpatel06-cyber-crisis.hf.space/dashboard/index.html) — war room, 5 panels, auto-step demo |
+| **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
+| **OpenEnv validation** | 6 / 6 — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
+| **Blog (HF, markdown)** | [huggingface.co/spaces/.../blog.md](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis/blob/main/blog.md) |
+| **Colab (training, Open in Colab)** | [colab: training/train.ipynb](https://colab.research.google.com/github/ArsheelPatel06/Crisis_Environment/blob/review/team-pull/training/train.ipynb) |
+| **Trained LoRA** | [ArsheelPatel06/cyber-crisis-qwen2-lora](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
+| **GitHub** | [Crisis_Environment](https://github.com/ArsheelPatel06/Crisis_Environment) (branch `review/team-pull`) |
 
 ---
 
@@ -427,12 +427,12 @@ Every grader returns a score in `[0.0, 1.0]`. Rewards are deterministic given th
 | Link | URL |
 |------|-----|
 | **HF Space (live env)** | [ArsheelPatel06/Cyber-Crisis](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis) |
+| **Blog (this Space repo)** | [blog.md on `main`](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis/blob/main/blog.md) |
+| **Colab (training)** | [Open in Colab — `training/train.ipynb`](https://colab.research.google.com/github/ArsheelPatel06/Crisis_Environment/blob/review/team-pull/training/train.ipynb) |
 | **Live API** | `https://arsheelpatel06-cyber-crisis.hf.space` |
-| **OpenEnv validation** | **6 / 6 passed** — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
-| **Demo video** | [YouTube — Adversarial Cyber Crisis Simulator walkthrough](https://youtu.be/REPLACE_WITH_YOUR_URL) |
-| **Trained LoRA weights** | [ArsheelPatel06/cyber-crisis-qwen2-lora](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
-| **Colab training notebook** | [training/cyber_crisis_grpo.ipynb](training/cyber_crisis_grpo.ipynb) — clone repo, pip install, run on T4 |
-| **GitHub** | [ArsheelPatel06/Crisis_Environment](https://github.com/ArsheelPatel06/Crisis_Environment) — branch `review/team-pull` |
+| **OpenEnv validation** | 6 / 6 — `openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space` |
+| **Trained LoRA** | [ArsheelPatel06/cyber-crisis-qwen2-lora](https://huggingface.co/ArsheelPatel06/cyber-crisis-qwen2-lora) |
+| **GitHub** | [ArsheelPatel06/Crisis_Environment](https://github.com/ArsheelPatel06/Crisis_Environment) — `review/team-pull` |
 
 ---
 
@@ -440,7 +440,8 @@ Every grader returns a score in `[0.0, 1.0]`. Rewards are deterministic given th
 
 - **[IMPLEMENTATION.md](IMPLEMENTATION.md)** — full design, judging rubric map, architecture notes
 - **[training/HANDOFF.md](training/HANDOFF.md)** — quick teammate runbook for training pipeline
-- **[DEMO_SEEDS.md](DEMO_SEEDS.md)** — seeds 14, 108, 23 for repeatable video demos
+- **[DEMO_SEEDS.md](DEMO_SEEDS.md)** — seeds 14, 108, 23 for repeatable video demos  
+- **[DEMO_VIDEO_SCRIPT.md](DEMO_VIDEO_SCRIPT.md)** — shot list + narration for the demo / YouTube
 
 ---
 

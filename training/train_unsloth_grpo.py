@@ -101,7 +101,7 @@ def _task2_env_reward(
         action = Action(
             action_type="communicate",
             target="auth_server",
-            argument=text[:600],  # rubric penalizes >600 chars
+            argument_text=text[:600],  # rubric penalizes >600 chars
             citations=citations,
         )
         env = CyberCrisisEnv(seed=s, task_id="stakeholder_argument")
