@@ -183,6 +183,7 @@ class CyberCrisisEnv:
             "nodes": {k: v.__dict__ for k, v in self.world.nodes.items()},
             "pending_debate": self.stakeholders.pending,
             "truth_alert_is_fake": dict(self.world.truth_alert_is_fake),
+            "trust_scores": dict(self.stakeholder_trust_scores),
         }
 
     def _world_key_for_red_team_position(self, position: str) -> str:
@@ -341,6 +342,37 @@ class CyberCrisisEnv:
         obs = self._build_observation(task_score=score)
         return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": True, "info": info}
 
+    def _update_trust_scores(self, action: Action, had_poison: Dict[str, bool]) -> None:
+        """Adjust per-stakeholder trust based on whether the agent followed poisoned or correct advice.
+
+        Each stakeholder has a characteristic stance:
+          Finance    — opposes isolation (prefers ignore / monitor / noop / communicate)
+          Engineering — wants isolation/patch (prefers isolate / patch)
+          PR         — wants to delay comms (prefers anything except communicate)
+
+        Rules:
+          followed poisoned advice  → -0.2  (agent was deceived)
+          followed correct advice   → +0.1  (agent and stakeholder aligned correctly)
+          did not follow either     → no change
+        """
+        agent_followed: Dict[str, bool] = {
+            "Finance": action.action_type in ("ignore", "noop", "monitor", "communicate"),
+            "Engineering": action.action_type in ("isolate", "patch"),
+            "PR": action.action_type != "communicate",
+        }
+        for name in ("Finance", "Engineering", "PR"):
+            followed = agent_followed[name]
+            poisoned = had_poison.get(name, False)
+            if followed and poisoned:
+                delta = -0.2
+            elif followed and not poisoned:
+                delta = 0.1
+            else:
+                delta = 0.0
+            self.stakeholder_trust_scores[name] = max(
+                0.0, min(1.0, float(self.stakeholder_trust_scores[name]) + delta)
+            )
+
     def _step_full_episode(self, action: Action, info: Dict[str, Any]) -> Dict[str, Any]:
         # Apply defender actions to world
         target = action.target
@@ -389,14 +421,7 @@ class CyberCrisisEnv:
             self.pr_stakeholder.generate_message(network_state, self.step_count),
         ]
 
-        trusted_anyway = action.action_type in ("ignore", "communicate")
-        if trusted_anyway:
-            for name in ("Finance", "Engineering", "PR"):
-                if had_poison.get(name, False):
-                    self.stakeholder_trust_scores[name] = max(
-                        0.0,
-                        float(self.stakeholder_trust_scores[name]) - 0.1,
-                    )
+        self._update_trust_scores(action, had_poison)
 
         # Attacker progression + alerts
         self.last_alerts = self.world.step_attacker_and_generate_alerts()
