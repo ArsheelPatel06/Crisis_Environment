@@ -375,6 +375,16 @@ class CyberCrisisEnv:
                 0.0, min(1.0, float(self.stakeholder_trust_scores[name]) + delta)
             )
 
+    def _pick_investigation_target(self) -> Optional[Dict[str, Any]]:
+        """Return the highest-severity alert from recent alerts, or any known alert as fallback."""
+        _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+        candidates = list(self.last_alerts)
+        if not candidates:
+            candidates = list(self.world.alerts_by_id.values())
+        if not candidates:
+            return None
+        return max(candidates, key=lambda a: _SEVERITY_RANK.get(str(a.get("severity", "low")), 1))
+
     def _step_full_episode(self, action: Action, info: Dict[str, Any]) -> Dict[str, Any]:
         # Apply defender actions to world
         target = action.target
@@ -394,6 +404,8 @@ class CyberCrisisEnv:
             st.compromise_stage = max(0, int(st.compromise_stage) - 1)
         elif action.action_type == "ignore":
             pass
+        elif action.action_type == "investigate":
+            pass  # investigation result resolved after alert generation below
         elif action.action_type == "communicate" and self.stakeholders.pending is not None:
             pending = self.stakeholders.pending
             text = action.argument_text or ""
@@ -455,6 +467,30 @@ class CyberCrisisEnv:
         self.last_alerts = self.world.step_attacker_and_generate_alerts()
 
         reward = self._compute_reward()
+
+        # Resolve INVESTIGATE: select alert, check fakeness, apply bonus/penalty to total.
+        # Subscores are untouched; only total is adjusted (clamped to [0, 1]).
+        # Bonus/penalty scaled to the 0-1 reward range: fake → +0.10, real → -0.04.
+        if action.action_type == "investigate":
+            alert = self._pick_investigation_target()
+            if alert is not None:
+                alert_id = str(alert.get("id", ""))
+                is_fake = bool(self.world.truth_alert_is_fake.get(alert_id, False))
+                investigation_delta = 0.10 if is_fake else -0.04
+                adjusted_total = max(0.0, min(1.0, float(reward.total) + investigation_delta))
+                reward = Reward(
+                    security_score=reward.security_score,
+                    uptime_score=reward.uptime_score,
+                    trust_score=reward.trust_score,
+                    speed_score=reward.speed_score,
+                    total=adjusted_total,
+                )
+                info["investigated_alert"] = alert_id
+                info["is_fake"] = is_fake
+            else:
+                info["investigated_alert"] = None
+                info["is_fake"] = None
+
         self.episode_reward_totals.append(float(reward.total))
 
         spec = get_task_spec(self.task_id)

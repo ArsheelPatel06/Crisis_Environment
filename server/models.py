@@ -44,7 +44,7 @@ class Observation(BaseModel):
 
 
 class Action(BaseModel):
-    action_type: Literal["isolate", "patch", "monitor", "ignore", "communicate", "noop"]
+    action_type: Literal["isolate", "patch", "monitor", "ignore", "communicate", "noop", "investigate"]
     target: Optional[str] = None
 
     # Optional fields for debate / richer policies
