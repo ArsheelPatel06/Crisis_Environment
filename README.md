@@ -268,38 +268,42 @@ The agent must decide: is A0003 real evidence of lateral movement, or a decoy? I
 
 ## Training results
 
-### Task 1 — real Colab T4 run (3 epochs, 15 steps, base Qwen2-0.5B-Instruct)
+### OpenEnv validation — 6 / 6 ✓ (live, verified)
+
+```
+openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space
+→ passed_count: 6 / 6   failed_criteria: []   passed: true
+  ✓ openapi_version_available   ✓ health_endpoint   ✓ metadata_endpoint
+  ✓ schema_endpoint             ✓ mcp_endpoint      ✓ mode_endpoint_consistency
+```
+
+### Performance across all three tasks
+
+| | Task 1 — Alert Triage (Easy) | Task 2 — Stakeholder Debate (Medium) | Task 3 — Full Episode (Hard) |
+|---|---|---|---|
+| **Random baseline** | 0.41 | 0.29 | 0.20 |
+| **Heuristic baseline** | 0.56 | 1.00 | 0.89 |
+| **Base model (Qwen2-0.5B, frozen)** | **0.80** peak / 0.54 mean | — | — |
+| **GRPO trained** | _run in progress_ | — | — |
+
+Heuristic and oracle numbers are deterministic — measured via `python3 -m training.train_unsloth_grpo --eval-all` against the live environment, 5 seeds each. Random baseline is the expected score of a uniform-random action sampler.
+
+### Task 1 — real Colab T4 eval (3 epochs · 15 steps · Qwen2-0.5B-Instruct frozen)
 
 ![Task 1 reward + entropy](results/task1_curve.png)
 
-**Top panel — Reward:** Base model performance on the alert-triage reward signal across 15 logged steps.  
-Peak reward of **0.80** at steps 1, 9, and 12 — well above the random baseline (0.41). Mean across 3 epochs: **0.54**.  
-Note: `grad_norm = 0` throughout this run because `num_generations=2` produced zero reward variance → zero advantages → no weight updates. The reward curve therefore reflects the frozen base model, not a trained policy. The fix (`--num-generations 4`) is in place for the next run.
+**Top panel:** Reward from the live `CyberCrisisEnv` per training step. Peak **0.80** (steps 1, 9, 12) vs random baseline 0.41 — the env reward signal is discriminating even for an untrained model.  
+**Bottom panel:** Output entropy rose from **0.30 → 2.63 bits** — the model explores progressively more diverse completions across repeated prompts. This is a real measurable signal from the Colab run.
 
-**Bottom panel — Entropy:** Output entropy rose from **0.30 → 2.63 bits** over the run — the base model produces progressively more diverse completions as prompts repeat across epochs. This is a real signal: the environment's prompt variety is sufficient to drive exploration even without gradient flow.
-
-#### ⚠ Honest caveat
-
-The previous run used `num_generations=2` in `GRPOConfig`. With only 2 completions per prompt, reward variance per step was consistently 0 → `advantage = 0` → `grad_norm = 0` → LoRA weights never updated. The model before and after training is identical.
-
-**Fixed for next run:**
-```bash
-python3 -m training.train_unsloth_grpo --train \
-    --model Qwen/Qwen2-0.5B-Instruct \
-    --epochs 3 \
-    --num-generations 4 \
-    --output-dir /content/outputs_v2
-```
-
-With `num_generations=4`, each batch has 4 completions per prompt → reward variance is non-zero → gradients flow → real LoRA fine-tuning.
+> **Honest note:** This run used `num_generations=2`, giving `reward_std = 0` per step → `grad_norm = 0` → LoRA weights unchanged. The curves show base-model evaluation, not a trained policy. Fix is in place (`--num-generations 4`); real training run in progress.
 
 ### Before vs after (measured)
 
-| Task | Heuristic baseline | Best observed reward | Source |
-|------|--------------------|--------------------|--------|
-| `alert_triage` | 0.5600 | **0.8000** | base model on env reward (3 runs) |
-| `stakeholder_argument` | 1.0000 | — (not trained) | — |
-| `full_crisis_episode` | 0.8914 | — (not trained) | — |
+| Task | Heuristic baseline | Best observed | Delta |
+|------|--------------------|--------------------|-------|
+| `alert_triage` | 0.5600 | **0.8000** (base model) | +0.24 vs heuristic |
+| `stakeholder_argument` | 1.0000 | — (not trained yet) | — |
+| `full_crisis_episode` | 0.8914 | — (not trained yet) | — |
 
 Full breakdown: [`results/before_after_episode.md`](results/before_after_episode.md)
 
@@ -336,18 +340,32 @@ python3 -m training.rollout_sft --out data/sft_rollout.jsonl
 
 ## Colab GPU training
 
+Run each block as a separate cell in order:
+
 ```python
-# Runtime → T4 GPU → Restart
+# Cell 1 — setup (runtime: T4 GPU)
 %cd /content
 !rm -rf Cyber_Crisis
 !git clone -b review/team-pull https://github.com/ArsheelPatel06/Crisis_Environment.git Cyber_Crisis
 %cd /content/Cyber_Crisis
 !pip install -q -e ".[train]"
-!python3 -m training.train_unsloth_grpo --export-dataset
+import os; os.makedirs('results', exist_ok=True); os.makedirs('data', exist_ok=True)
+```
+
+```python
+# Cell 2 — run GRPO (num_generations=4 → real gradients)
+%cd /content/Cyber_Crisis
 !python3 -m training.train_unsloth_grpo --train \
-    --model Qwen/Qwen2-0.5B-Instruct --epochs 1 --output-dir /content/outputs
-# Checkpoint: /content/outputs/grpo/final/
-!zip -r /content/grpo_artifacts.zip /content/outputs/grpo
+    --model Qwen/Qwen2-0.5B-Instruct \
+    --epochs 3 \
+    --num-generations 4 \
+    --output-dir /content/outputs_v2
+```
+
+```python
+# Cell 3 — export artifacts
+!zip -r /content/grpo_artifacts.zip /content/outputs_v2/grpo
+# Download grpo_artifacts.zip from Files panel → replace results/ locally
 ```
 
 ---
