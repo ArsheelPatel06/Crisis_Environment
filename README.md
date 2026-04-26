@@ -308,7 +308,9 @@ Every grader returns a score in `[0.0, 1.0]`. Rewards are deterministic given th
 | Link | URL |
 |------|-----|
 | GitHub | `https://github.com/ArsheelPatel06/Crisis_Environment` (branch: `review/team-pull`) |
-| HF Space | _deploy and add URL_ |
+| HF Space | `https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis` |
+| Live API | `https://arsheelpatel06-cyber-crisis.hf.space` |
+| OpenEnv validation | **6 / 6 passed** (`openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space`) |
 | Colab notebook | _add "Open in Colab" badge_ |
 | Video (90 s – 2 min) | _YouTube / Loom_ |
 | Trained weights | _HF model repo or release zip of `grpo/final`_ |
