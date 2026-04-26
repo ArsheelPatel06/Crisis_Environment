@@ -62,6 +62,56 @@ def _action_from_completion(text: str) -> "Any":
         return Action(action_type="noop", target=None)
 
 
+def _extract_citations(text: str) -> list[str]:
+    """Pull alert IDs (A0001 format) from LLM completion text."""
+    import re
+    return list(dict.fromkeys(re.findall(r'\bA\d{4}\b', str(text))))[:4]
+
+
+def _task2_env_reward(
+    prompts: list[Any] | str | None,
+    completions: list[Any] | str | None,
+    **kwargs: Any,
+) -> list[float]:
+    """GRPO reward for Task 2 — stakeholder argument.
+
+    The LLM completion is used directly as the argument text.
+    We extract alert IDs from the text as citations.
+    Reward = argument_score from grade_task2_stakeholder_argument rubric.
+    """
+    from server.env import CyberCrisisEnv
+    from server.models import Action
+
+    if completions is None:
+        return [0.0]
+    comps: Sequence[Any] = completions if isinstance(completions, (list, tuple)) else [completions]
+    seeds: Sequence | None = kwargs.get("seed")
+    if seeds is None:
+        seeds = [0] * len(comps)
+    if hasattr(seeds, "tolist"):
+        seeds = seeds.tolist()  # type: ignore[no-untyped-call, assignment]
+    if not isinstance(seeds, (list, tuple)):
+        seeds = [seeds] * len(comps)
+
+    rewards: list[float] = []
+    for i, comp in enumerate(comps):
+        s = int(list(seeds)[i] if i < len(seeds) else list(seeds)[-1])  # type: ignore[call-overload, index]
+        text = str(comp) if not isinstance(comp, str) else comp
+        citations = _extract_citations(text)
+        action = Action(
+            action_type="communicate",
+            target="auth_server",
+            argument=text[:600],  # rubric penalizes >600 chars
+            citations=citations,
+        )
+        env = CyberCrisisEnv(seed=s, task_id="stakeholder_argument")
+        env.reset(seed=s, task_id="stakeholder_argument")
+        out = env.step(action)
+        r = out.get("reward", {}) or {}
+        rewards.append(float(r.get("total", 0.0)) if isinstance(r, dict) else 0.0)
+    return rewards
+
+
 def _task1_env_reward(
     prompts: list[Any] | str | None,
     completions: list[Any] | str | None,
@@ -168,6 +218,8 @@ def _build_grpo_config(
 def run_grpo_train(
     model_name: str, seeds: list[int], output_dir: Path, epochs: int, use_unsloth: bool,
     num_generations: int = 4,
+    reward_fn: Any = None,
+    task_id: str = "alert_triage",
 ) -> None:
     from importlib import import_module
     from inspect import signature
@@ -182,7 +234,9 @@ def run_grpo_train(
     )
     from trl import GRPOConfig, GRPOTrainer  # type: ignore[import-untyped]
 
-    out_path = output_dir / "grpo_task1.jsonl"
+    if reward_fn is None:
+        reward_fn = _task1_env_reward
+    out_path = output_dir / f"grpo_{task_id}.jsonl"
     _build_task1_grpo_jsonl_path(seeds, out_path)
     lines = [json.loads(p) for p in out_path.read_text(encoding="utf-8").strip().splitlines() if p.strip()]
 
@@ -276,7 +330,7 @@ def run_grpo_train(
         "model": model,
         "args": cfg,
         "train_dataset": ds,  # type: ignore[dict-item, arg-type, misc, truthy, truthy-bool]
-        "reward_funcs": [_task1_env_reward],  # type: ignore[dict-item, list-item, misc, truthy, truthy-bool]
+        "reward_funcs": [reward_fn],  # type: ignore[dict-item, list-item, misc, truthy, truthy-bool]
     }
     if "processing_class" in pnames:
         kw["processing_class"] = tok
@@ -306,6 +360,13 @@ def main() -> None:
         help="Run GRPO (requires trl, transformers, peft, torch, CUDA, bitsandbytes; optional: unsloth for speed).",
     )
     parser.add_argument("--model", type=str, default="Qwen/Qwen2-0.5B-Instruct")
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="alert_triage",
+        choices=["alert_triage", "stakeholder_argument"],
+        help="Which task to train on. alert_triage=Task1, stakeholder_argument=Task2.",
+    )
     parser.add_argument(
         "--seeds",
         type=str,
@@ -339,10 +400,14 @@ def main() -> None:
     if args.train:
         try:
             seeds = [int(x) for x in args.seeds.split(",") if x.strip()]
+            task_id = getattr(args, "task", "alert_triage")
+            reward_fn = _task2_env_reward if task_id == "stakeholder_argument" else _task1_env_reward
             run_grpo_train(
                 args.model, seeds, args.output_dir, args.epochs,
                 use_unsloth=bool(args.use_unsloth),
                 num_generations=int(args.num_generations),
+                reward_fn=reward_fn,
+                task_id=task_id,
             )
         except Exception as e:  # noqa: BLE001
             print(
