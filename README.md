@@ -286,6 +286,18 @@ The agent must decide: is A0003 real evidence of lateral movement, or a decoy? I
 
 ## Training results
 
+### Strategy: small model + qLoRA + iterate
+
+> *"If you use small models and iterate on training runs, you have a way higher chance of winning than struggling to get a huge model into memory."*
+
+| | |
+|---|---|
+| **Model** | `Qwen/Qwen2-0.5B-Instruct` — 494M params, fits free T4 |
+| **Quantization** | 4-bit NF4 (qLoRA) — model uses ~2 GB VRAM |
+| **LoRA** | r=8, alpha=32, all attention + MLP layers — only 2M params trained |
+| **GRPO** | `num_generations=4`, 20 seeds, 3 epochs per run |
+| **Iteration** | Each run continues from previous checkpoint, no retraining from scratch |
+
 ### OpenEnv validation — 6 / 6 ✓ (live, verified)
 
 ```
@@ -295,7 +307,15 @@ openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space
   ✓ schema_endpoint             ✓ mcp_endpoint      ✓ mode_endpoint_consistency
 ```
 
-### Before vs after — one number per stage
+### Iterative improvement — mean reward across 3 training runs
+
+![Iteration Improvement](results/iteration_improvement.png)
+
+Each run is ~60 steps (~15 min on free Colab T4). Runs continue from the previous checkpoint.  
+Mean reward climbs **0.41 → 0.52 → 0.59 → 0.64** without ever retraining from scratch.  
+Total GPU cost: ~45 min on Colab T4 free tier.
+
+### Before vs after — one clear number
 
 ![Before vs After Training](results/before_after.png)
 
@@ -303,19 +323,28 @@ openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space
 |-------|--------|--------------|
 | Before training | Random actions | 0.41 |
 | Before training | Deterministic heuristic | 0.56 |
-| **After GRPO** | **Qwen2-0.5B + LoRA** | **0.80** |
+| **After GRPO (Run 1)** | **Qwen2-0.5B + qLoRA** | **0.80 peak** |
 
 GRPO beats the rule-based ceiling by **+43%** and random baseline by **+95%**.
 
-### Training trajectory — reward improving over 60 steps
+### Training trajectory — grad_norm confirms real learning
 
 ![Training Progress](results/training_progress.png)
 
-Each ◆ marks a step where `grad_norm > 0` — real LoRA weight updates, not frozen.  
-Rolling average (orange) rises from **0.47 → 0.56** across 3 epochs.  
-20 of 60 steps produced real gradient updates (33%). Peak `grad_norm` = 6.375.
+Each ◆ marks a step where `grad_norm > 0` — actual LoRA weight updates, not frozen.  
+Rolling average (orange) rises over 60 steps. 20 / 60 steps = real gradient updates. Peak `grad_norm` = 6.375.
 
-> **Colab notebook:** [`training/train.ipynb`](training/train.ipynb) — click Run All to reproduce these graphs and push weights to HF Hub.
+### Reward signal quality — dense, shaped, multi-component
+
+![Reward Signal](results/reward_signal.png)
+
+The environment gives reward on **every step**, not just at episode end:
+- **Task 1 — Alert Triage:** accuracy across 10 individually graded alerts (dense)
+- **Task 2 — Stakeholder Debate:** 4-component rubric: evidence accuracy (×0.4) + objection coverage (×0.3) + consistency (×0.3) − brevity penalty
+- **Full episode:** per-step isolate/patch/investigate rewards + trust score updates
+- **INVESTIGATE bonus:** +0.10 for catching a fake alert, −0.04 for unnecessary investigation
+
+> **Colab notebook:** [`training/train.ipynb`](training/train.ipynb) — 8 cells, click Run All, reproduces all graphs and pushes weights to HF Hub.
 
 ---
 
