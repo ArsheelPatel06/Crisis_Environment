@@ -214,22 +214,18 @@ Cyber_Crisis/
 │   ├── training_log.csv        GRPO step/reward log (replace with real Colab export)
 │   ├── task1_curve.png         Reward curves
 │   ├── task2_curve.png
-│   ├── before_after_episode.md Episode narrative comparison
-│   ├── baseline_report.md      Baseline run summary
-│   └── deploy_parity.json      HTTP vs in-process parity
+│   └── deploy_parity.json      HTTP vs in-process parity (if generated)
 │
 ├── tests/
 │   ├── test_tasks.py       Deterministic grader unit tests
 │   └── test_determinism.py Same-seed → same-output env determinism check
 │
 ├── openenv.yaml            OpenEnv manifest (tasks, reward range, interface)
+├── blog.md                 Hackathon write-up (served on Space)
 ├── Dockerfile              HF Space / container
 ├── pyproject.toml          Package + server entrypoint + [train] extras
 ├── requirements.txt        Runtime deps (fastapi, uvicorn, pydantic)
-├── requirements-train.txt  GPU/training deps (torch, trl, unsloth, peft …)
-├── IMPLEMENTATION.md       Full design + judging rubric map
-├── DEMO_SEEDS.md           Demo seeds (14, 108, 23) for video
-└── training/HANDOFF.md     Teammate runbook
+└── requirements-train.txt  GPU/training deps (torch, trl, unsloth, peft …)
 ```
 
 ---
@@ -438,10 +434,7 @@ Every grader returns a score in `[0.0, 1.0]`. Rewards are deterministic given th
 
 ## Further reading
 
-- **[IMPLEMENTATION.md](IMPLEMENTATION.md)** — full design, judging rubric map, architecture notes
-- **[training/HANDOFF.md](training/HANDOFF.md)** — quick teammate runbook for training pipeline
-- **[DEMO_SEEDS.md](DEMO_SEEDS.md)** — seeds 14, 108, 23 for repeatable video demos  
-- **[DEMO_VIDEO_SCRIPT.md](DEMO_VIDEO_SCRIPT.md)** — shot list + narration for the demo / YouTube
+- **[blog.md](blog.md)** — project write-up (mirrored on the [Space](https://huggingface.co/spaces/ArsheelPatel06/Cyber-Crisis) as `blog.md`)
 
 ---
 
