@@ -1,0 +1,12 @@
+# Training (GPU): install on Colab/RunPod/local — do NOT add to the OpenEnv server image.
+# pip install -r requirements-train.txt
+torch>=2.2.0
+transformers>=4.40.0
+accelerate>=0.27.0
+datasets>=2.19.0
+peft>=0.11.0
+trl>=0.15.0
+sentencepiece>=0.1.99
+bitsandbytes
+# Unsloth (GPU): `pip install unsloth` or see https://github.com/unslothai/unsloth — not required to import
+#   `training.train_unsloth_grpo` for --eval-baseline (no Unsloth).

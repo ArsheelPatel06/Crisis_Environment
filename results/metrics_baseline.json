@@ -1,0 +1,8 @@
+{
+  "heuristic_inprocess": {
+    "alert_triage": 0.54,
+    "stakeholder_argument": 0.3,
+    "full_crisis_episode": 0.8914454678362572
+  },
+  "seeds": "from_eval"
+}
