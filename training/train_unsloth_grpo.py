@@ -135,13 +135,18 @@ def _build_grpo_config(
     run_dir: Path,
     epochs: int,
     use_cpu: bool,
+    num_generations: int = 4,
 ) -> Any:
-    """TRL versions differ (e.g. ``max_prompt_length`` removed in newer GRPOConfig). Only pass supported kwargs."""
+    """TRL versions differ (e.g. ``max_prompt_length`` removed in newer GRPOConfig). Only pass supported kwargs.
+
+    ``num_generations`` must be ≥ 2 for GRPO to produce non-zero advantages.
+    With num_generations=1, reward_std=0 every step → advantage=0 → grad_norm=0 → no learning.
+    Default is 4: each prompt gets 4 completions, giving reward variance even when the base model
+    is near-random. Global batch = per_device_batch(2) × num_generations(4) = 8 on T4 for 0.5B.
+    """
     from inspect import signature
 
     allowed = set(signature(grpo_config_cls).parameters)
-    # TRL 1.2+ GRPO requires num_generations >= 2. Global batch must be divisible by num_generations
-    # (1 GPU × batch 2 ÷ 2 generations = OK on T4 for 0.5B).
     candidates: dict[str, Any] = {
         "output_dir": str(run_dir),
         "num_train_epochs": float(epochs),
@@ -150,10 +155,9 @@ def _build_grpo_config(
         "logging_steps": 1,
         "max_completion_length": 384,
         "max_prompt_length": 1024,
-        "num_generations": 2,
+        "num_generations": max(2, int(num_generations)),
     }
     if use_cpu:
-        # TRL 1.x + transformers: CPU training must opt in; bf16 defaults can error without GPU.
         candidates["use_cpu"] = True
         candidates["bf16"] = False
         candidates["fp16"] = False
@@ -162,7 +166,8 @@ def _build_grpo_config(
 
 
 def run_grpo_train(
-    model_name: str, seeds: list[int], output_dir: Path, epochs: int, use_unsloth: bool
+    model_name: str, seeds: list[int], output_dir: Path, epochs: int, use_unsloth: bool,
+    num_generations: int = 4,
 ) -> None:
     from importlib import import_module
     from inspect import signature
@@ -263,7 +268,8 @@ def run_grpo_train(
     run_dir = output_dir / "grpo"
     run_dir.mkdir(parents=True, exist_ok=True)
     cfg: Any = _build_grpo_config(
-        GRPOConfig, run_dir=run_dir, epochs=epochs, use_cpu=not use_cuda
+        GRPOConfig, run_dir=run_dir, epochs=epochs, use_cpu=not use_cuda,
+        num_generations=num_generations,
     )  # type: ignore[assignment, misc, truthy, truthy-bool]
     pnames = set(signature(GRPOTrainer).parameters)  # type: ignore[no-untyped-call, type-arg, misc, truthy, arg-type, truthy-bool]
     kw: dict[str, Any] = {
@@ -306,7 +312,17 @@ def main() -> None:
         default=",".join(str(s) for s in SEED_LIST_DEFAULT),
     )
     parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "training" / "outputs" / "grpo_task1")
-    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument(
+        "--num-generations",
+        type=int,
+        default=4,
+        help=(
+            "Number of completions per prompt for GRPO advantage estimation. "
+            "Must be ≥ 2; <2 → reward_std=0 → grad_norm=0 → no learning. "
+            "Default 4 works on T4 with 0.5B model."
+        ),
+    )
     parser.add_argument(
         "--use-unsloth",
         action="store_true",
@@ -323,7 +339,11 @@ def main() -> None:
     if args.train:
         try:
             seeds = [int(x) for x in args.seeds.split(",") if x.strip()]
-            run_grpo_train(args.model, seeds, args.output_dir, args.epochs, use_unsloth=bool(args.use_unsloth))
+            run_grpo_train(
+                args.model, seeds, args.output_dir, args.epochs,
+                use_unsloth=bool(args.use_unsloth),
+                num_generations=int(args.num_generations),
+            )
         except Exception as e:  # noqa: BLE001
             print(
                 "Training failed (common: missing trl/torch/cuda, or API mismatch for your TRL version). "

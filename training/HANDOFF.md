@@ -66,7 +66,8 @@ Outputs:
 - Response contract: `training/prompts.py` (JSON `Action` schema, parse with repair in code).
 - SFT JSONL: `python -m training.rollout_sft --out data/sft_rollout.jsonl`
 - In-process metrics (no GPU): `python -m training.train_unsloth_grpo --eval-all` → `results/metrics_*.json`
-- GRPO Task1: `python -m training.train_unsloth_grpo --train` (see `requirements-train.txt` / `pip install -e .[train]`)
+- GRPO Task1: `python -m training.train_unsloth_grpo --train --num-generations 4 --epochs 3` (see `requirements-train.txt` / `pip install -e .[train]`)
+  - **IMPORTANT:** `num_generations` must be ≥ 2 (default is now 4). Using `num_generations=1` produces `reward_std=0 → advantage=0 → grad_norm=0 → no learning`.
 - Curves: `python -m training.generate_results` (reads `metrics_baseline.json`; `training_log.csv` may be from GRPO)
 - HTTP parity: `python -m training.eval_http --base-url http://127.0.0.1:7860` → `results/deploy_parity.json`
 

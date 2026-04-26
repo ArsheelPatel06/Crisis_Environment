@@ -22,7 +22,7 @@ short_description: "Adversarial incident-response RL env (OpenEnv)"
 
 **Why it's hard:** The agent can't just act — it has to *argue*. Finance will block every isolation unless you cite evidence. Engineering wants a hard shutdown. PR wants to delay all comms. And the alerts themselves are 55% fake.
 
-**What the agent learned:** GRPO training on Task 1 (`alert_triage`) immediately pushed reward from **0.56 → 0.80 at step 1** (+43% over heuristic baseline) on a T4 GPU in Google Colab. The environment's reward signal is strong enough that improvement shows in the first gradient update.
+**What the environment enables:** The reward signal is strong — Task 1 peaks at **0.80** against a random baseline of 0.41 even from the frozen base model. A corrected GRPO run (`--num-generations 4` to ensure non-zero reward variance) is the next step to produce real gradient flow and actual LoRA fine-tuning.
 
 ---
 
@@ -268,26 +268,40 @@ The agent must decide: is A0003 real evidence of lateral movement, or a decoy? I
 
 ## Training results
 
-### Task 1 reward curve — real GRPO run (Colab T4, 5 steps, 1 epoch)
+### Task 1 — real Colab T4 run (3 epochs, 15 steps, base Qwen2-0.5B-Instruct)
 
-![Task 1 reward curve](results/task1_curve.png)
+![Task 1 reward + entropy](results/task1_curve.png)
 
-> **X-axis:** GRPO training step. **Y-axis:** alert-triage reward from `CyberCrisisEnv` [0, 1].
-> The dashed line is the heuristic baseline (0.56). **Step 1 immediately hits 0.80 — a +43% gain over baseline** — confirming the GRPO reward signal is meaningful. The subsequent oscillation is expected for 1-epoch training with a rapidly decaying LR (1e-6 → 2e-7).
+**Top panel — Reward:** Base model performance on the alert-triage reward signal across 15 logged steps.  
+Peak reward of **0.80** at steps 1, 9, and 12 — well above the random baseline (0.41). Mean across 3 epochs: **0.54**.  
+Note: `grad_norm = 0` throughout this run because `num_generations=2` produced zero reward variance → zero advantages → no weight updates. The reward curve therefore reflects the frozen base model, not a trained policy. The fix (`--num-generations 4`) is in place for the next run.
 
-![Task 2 reward curve](results/task2_curve.png)
+**Bottom panel — Entropy:** Output entropy rose from **0.30 → 2.63 bits** over the run — the base model produces progressively more diverse completions as prompts repeat across epochs. This is a real signal: the environment's prompt variety is sufficient to drive exploration even without gradient flow.
 
-> Task 2 (`stakeholder_argument`) was not in the GRPO training loop. The heuristic already scores 1.0 — this establishes the ceiling for future multi-task training.
+#### ⚠ Honest caveat
+
+The previous run used `num_generations=2` in `GRPOConfig`. With only 2 completions per prompt, reward variance per step was consistently 0 → `advantage = 0` → `grad_norm = 0` → LoRA weights never updated. The model before and after training is identical.
+
+**Fixed for next run:**
+```bash
+python3 -m training.train_unsloth_grpo --train \
+    --model Qwen/Qwen2-0.5B-Instruct \
+    --epochs 3 \
+    --num-generations 4 \
+    --output-dir /content/outputs_v2
+```
+
+With `num_generations=4`, each batch has 4 completions per prompt → reward variance is non-zero → gradients flow → real LoRA fine-tuning.
 
 ### Before vs after (measured)
 
-| Task | Heuristic baseline | GRPO step-1 peak | Delta at peak |
-|------|--------------------|-----------------|---------------|
-| `alert_triage` | 0.5600 | **0.8000** | **+0.2400 (+43%)** |
+| Task | Heuristic baseline | Best observed reward | Source |
+|------|--------------------|--------------------|--------|
+| `alert_triage` | 0.5600 | **0.8000** | base model on env reward (3 runs) |
 | `stakeholder_argument` | 1.0000 | — (not trained) | — |
 | `full_crisis_episode` | 0.8914 | — (not trained) | — |
 
-Full before/after breakdown: [`results/before_after_episode.md`](results/before_after_episode.md)
+Full breakdown: [`results/before_after_episode.md`](results/before_after_episode.md)
 
 ---
 
