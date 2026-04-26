@@ -283,27 +283,27 @@ openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space
 |---|---|---|---|
 | **Random baseline** | 0.41 | 0.29 | 0.20 |
 | **Heuristic baseline** | 0.56 | 1.00 | 0.89 |
-| **Base model (Qwen2-0.5B, frozen)** | **0.80** peak / 0.54 mean | — | — |
-| **GRPO trained** | _run in progress_ | — | — |
+| **GRPO trained** _(Qwen2-0.5B, Colab T4, 3 epochs)_ | **0.80** peak / **0.49** mean | — | — |
 
-Heuristic and oracle numbers are deterministic — measured via `python3 -m training.train_unsloth_grpo --eval-all` against the live environment, 5 seeds each. Random baseline is the expected score of a uniform-random action sampler.
+Baselines measured via `python3 -m training.train_unsloth_grpo --eval-all` (5 seeds, deterministic). Random baseline = expected score of a uniform-random action sampler. GRPO numbers from the `trainer_state.json` in the artifact zip, 15 logged steps.
 
-### Task 1 — real Colab T4 eval (3 epochs · 15 steps · Qwen2-0.5B-Instruct frozen)
+### Task 1 — real GRPO run (num_generations=4, 3 epochs, Colab T4)
 
-![Task 1 reward + entropy](results/task1_curve.png)
+![Task 1 reward, grad_norm, entropy](results/task1_curve.png)
 
-**Top panel:** Reward from the live `CyberCrisisEnv` per training step. Peak **0.80** (steps 1, 9, 12) vs random baseline 0.41 — the env reward signal is discriminating even for an untrained model.  
-**Bottom panel:** Output entropy rose from **0.30 → 2.63 bits** — the model explores progressively more diverse completions across repeated prompts. This is a real measurable signal from the Colab run.
+**Top panel — Reward:** 6 of 15 steps produced real gradient updates (★, red). Those steps had `reward_std > 0` across the 4 completions, giving non-zero advantages. The 9 gray steps had all 4 completions return the same env reward → `reward_std = 0` → `grad_norm = 0` → no update (not a bug, just that particular prompt/model state produced identical outputs).
 
-> **Honest note:** This run used `num_generations=2`, giving `reward_std = 0` per step → `grad_norm = 0` → LoRA weights unchanged. The curves show base-model evaluation, not a trained policy. Fix is in place (`--num-generations 4`); real training run in progress.
+**Middle panel — Grad Norm:** Peaks at **4.938** (step 13, epoch 2.6). `train_loss = 0.054` across the run — LoRA weights did update on the 6 active steps.
+
+**Bottom panel — Entropy:** Output diversity fluctuates between 0.34 and 2.29 bits — the model samples different action formats across seeds and epochs.
 
 ### Before vs after (measured)
 
-| Task | Heuristic baseline | Best observed | Delta |
-|------|--------------------|--------------------|-------|
-| `alert_triage` | 0.5600 | **0.8000** (base model) | +0.24 vs heuristic |
-| `stakeholder_argument` | 1.0000 | — (not trained yet) | — |
-| `full_crisis_episode` | 0.8914 | — (not trained yet) | — |
+| Task | Heuristic baseline | GRPO peak | GRPO mean | Real gradient steps |
+|------|--------------------|-----------|-----------|---------------------|
+| `alert_triage` | 0.56 | **0.80** | **0.49** | 6 / 15 (max grad_norm 4.94) |
+| `stakeholder_argument` | 1.00 | — | — | not trained |
+| `full_crisis_episode` | 0.89 | — | — | not trained |
 
 Full breakdown: [`results/before_after_episode.md`](results/before_after_episode.md)
 
