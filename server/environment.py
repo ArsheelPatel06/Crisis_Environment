@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from server.agents import (
     EngineeringStakeholder,
@@ -124,7 +124,20 @@ class CyberCrisisEnv:
 
         return self._build_observation(task_score=0.0)
 
+    @staticmethod
+    def _normalize_target(target: Optional[str]) -> Optional[str]:
+        """Normalize node names to snake_case accepted by the world simulator.
+
+        Accepts: 'API_Gateway', 'api_gateway', 'ApiGateway', etc.
+        """
+        if target is None:
+            return None
+        return target.lower().replace("-", "_").replace(" ", "_")
+
     def step(self, action: Action) -> Dict[str, Any]:
+        # Normalize target before dispatch so callers can use any casing
+        if action.target is not None:
+            action = Action(action_type=action.action_type, target=self._normalize_target(action.target))
         if self.done:
             obs = self._build_observation(task_score=0.0)
             return {

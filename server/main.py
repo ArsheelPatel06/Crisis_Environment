@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
@@ -11,6 +11,11 @@ from server.models import Action, Observation, Reward, TaskId
 
 app = FastAPI(title="OpenEnv Cyber Crisis Simulator", version="0.1.0")
 env = CyberCrisisEnv(seed=0, task_id="full_crisis_episode")
+
+
+class ResetRequest(BaseModel):
+    seed: int = 0
+    task_id: TaskId = "full_crisis_episode"
 
 
 class StepResponse(BaseModel):
@@ -32,7 +37,7 @@ def root() -> dict[str, Any]:
             "classifies alerts, debates stakeholders, and contains the breach."
         ),
         "endpoints": {
-            "POST /reset": "Start a new episode",
+            "POST /reset": "Start a new episode — body: {seed, task_id} or query params",
             "POST /step": "Send an action, receive observation + reward",
             "GET /state": "Full internal state (debug)",
             "GET /health": "Health check",
@@ -46,9 +51,15 @@ def root() -> dict[str, Any]:
 
 
 @app.post("/reset", response_model=Observation)
-def reset(seed: int = Query(default=0), task_id: TaskId = Query(default="full_crisis_episode")) -> Observation:
-    observation = env.reset(seed=seed, task_id=task_id)
-    return observation
+def reset(
+    body: Optional[ResetRequest] = None,
+    seed: int = Query(default=0),
+    task_id: TaskId = Query(default="full_crisis_episode"),
+) -> Observation:
+    # Accept seed/task_id from either JSON body or query params (body takes priority)
+    _seed = body.seed if body is not None else seed
+    _task_id = body.task_id if body is not None else task_id
+    return env.reset(seed=_seed, task_id=_task_id)
 
 
 @app.post("/step", response_model=StepResponse)
