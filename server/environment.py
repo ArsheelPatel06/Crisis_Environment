@@ -585,6 +585,15 @@ class CyberCrisisEnv:
             self.done = True
             info["terminal"] = "database_breached"
 
+        # Merge debugging/reasoning fields into info so callers get everything in one place
+        info.update({
+            "trust_scores": dict(self.stakeholder_trust_scores),
+            "poisoned_stakeholders": list(self.poisoned_stakeholders),  # already set above; re-affirm
+            "agent_reason": info.get("agent_reason", "No reasoning available"),
+        })
+
+        print("DEBUG STEP:", info["trust_scores"], info["poisoned_stakeholders"], info["agent_reason"])
+
         self.step_count += 1
         obs = self._build_observation(task_score=float(reward.total))
         return {"observation": obs.model_dump(), "reward": reward.model_dump(), "done": self.done, "info": info}
