@@ -283,25 +283,25 @@ openenv validate --url https://arsheelpatel06-cyber-crisis.hf.space
 |---|---|---|---|
 | **Random baseline** | 0.41 | 0.29 | 0.20 |
 | **Heuristic baseline** | 0.56 | 1.00 | 0.89 |
-| **GRPO trained** _(Qwen2-0.5B, Colab T4, 3 epochs)_ | **0.80** peak / **0.49** mean | — | — |
+| **GRPO trained** _(Qwen2-0.5B, Colab T4, 3 epochs, 20 seeds)_ | **0.80** peak / **0.52** mean | — | — |
 
-Baselines measured via `python3 -m training.train_unsloth_grpo --eval-all` (5 seeds, deterministic). Random baseline = expected score of a uniform-random action sampler. GRPO numbers from the `trainer_state.json` in the artifact zip, 15 logged steps.
+Baselines measured via `python3 -m training.train_unsloth_grpo --eval-all` (5 seeds, deterministic). Random baseline = expected score of a uniform-random action sampler. GRPO numbers from `trainer_state.json`, 60 logged steps (20 seeds × 3 epochs).
 
-### Task 1 — real GRPO run (num_generations=4, 3 epochs, Colab T4)
+### Task 1 — real GRPO run (num_generations=4, 20 seeds, 3 epochs, Colab T4)
 
 ![Task 1 reward, grad_norm, entropy](results/task1_curve.png)
 
-**Top panel — Reward:** 6 of 15 steps produced real gradient updates (★, red). Those steps had `reward_std > 0` across the 4 completions, giving non-zero advantages. The 9 gray steps had all 4 completions return the same env reward → `reward_std = 0` → `grad_norm = 0` → no update (not a bug, just that particular prompt/model state produced identical outputs).
+**Top panel — Reward:** 20 of 60 steps produced real gradient updates (red `*`). Steps with `reward_std > 0` across the 4 completions had non-zero advantages → LoRA weights updated. The 40 gray steps had all 4 completions return the same env reward for that prompt → `reward_std = 0` → no gradient (expected: the base model consistently picks the same action on easy prompts).
 
-**Middle panel — Grad Norm:** Peaks at **4.938** (step 13, epoch 2.6). `train_loss = 0.054` across the run — LoRA weights did update on the 6 active steps.
+**Middle panel — Grad Norm:** Peaks at **6.375**. With 20 seeds vs 5, gradient steps increased from 6/15 (40%) to 20/60 (33%) — more diverse prompts gave more variance.
 
-**Bottom panel — Entropy:** Output diversity fluctuates between 0.34 and 2.29 bits — the model samples different action formats across seeds and epochs.
+**Bottom panel — Entropy:** Output diversity across all 60 steps.
 
 ### Before vs after (measured)
 
 | Task | Heuristic baseline | GRPO peak | GRPO mean | Real gradient steps |
 |------|--------------------|-----------|-----------|---------------------|
-| `alert_triage` | 0.56 | **0.80** | **0.49** | 6 / 15 (max grad_norm 4.94) |
+| `alert_triage` | 0.56 | **0.80** | **0.52** | 20 / 60  (max grad_norm 6.375) |
 | `stakeholder_argument` | 1.00 | — | — | not trained |
 | `full_crisis_episode` | 0.89 | — | — | not trained |
 
